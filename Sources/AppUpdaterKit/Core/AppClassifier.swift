@@ -18,7 +18,8 @@ public struct AppClassifier: Sendable {
             path: scanned.path,
             currentVersion: scanned.currentVersion,
             buildVersion: scanned.buildVersion,
-            source: source(for: scanned)
+            source: source(for: scanned),
+            publicEDKey: scanned.publicEDKey
         )
     }
 

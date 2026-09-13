@@ -3,22 +3,57 @@ import Foundation
 
 let arguments = CommandLine.arguments
 
-// 无界面自检：跑一遍完整检测并打印结果。
-if arguments.contains("--check") {
+func value(after flag: String) -> String? {
+    guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else { return nil }
+    return arguments[index + 1]
+}
+
+func runAndWait(_ operation: @escaping () async -> Int32) -> Never {
     // main.swift 的顶层代码不能直接 await，用信号量把结果等出来再退出。
     let done = DispatchSemaphore(value: 0)
+    var code: Int32 = 0
     Task {
-        await HeadlessCheck.run()
+        code = await operation()
         done.signal()
     }
     done.wait()
-    exit(0)
+    exit(code)
 }
 
-// 界面截图：把真实的 ContentView 渲染成 PNG，用于验证排版。
+// 无界面自检：跑一遍完整检测并打印结果。
+if arguments.contains("--check") {
+    runAndWait { await HeadlessCheck.run(); return 0 }
+}
+
+// 预检：只打印某个应用升级前的全部判断，不下载、不写入。
+if let name = value(after: "--plan") {
+    runAndWait { await InstallCommand.run(appName: name, dryRun: true) }
+}
+
+// 真实升级一个应用。
+if let name = value(after: "--install") {
+    runAndWait { await InstallCommand.run(appName: name, dryRun: false) }
+}
+
+// 升级全部可自动完成的条目。
+if arguments.contains("--install-all") {
+    runAndWait { await InstallCommand.runAll(dryRun: false) }
+}
+
+if arguments.contains("--plan-all") {
+    runAndWait { await InstallCommand.runAll(dryRun: true) }
+}
+
+// 清理上一次被中断的安装残留。
+if arguments.contains("--recover") {
+    exit(InstallCommand.recover())
+}
+
+// 界面截图：把真实的视图渲染成 PNG，用于验证排版。
 if let index = arguments.firstIndex(of: "--snapshot") {
     let path = index + 1 < arguments.count ? arguments[index + 1] : "app-snapshot.png"
-    let code = MainActor.assumeIsolated { SnapshotRunner.run(outputPath: path) }
+    let mode = value(after: "--mode").flatMap(SnapshotRunner.Mode.init(rawValue:)) ?? .main
+    let code = MainActor.assumeIsolated { SnapshotRunner.run(outputPath: path, mode: mode) }
     exit(code)
 }
 

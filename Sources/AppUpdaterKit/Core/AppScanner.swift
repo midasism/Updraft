@@ -8,6 +8,7 @@ public struct ScannedApp: Sendable {
     public let currentVersion: String?
     public let buildVersion: String?
     public let feedURLString: String?
+    public let publicEDKey: String?
     public let hasMASReceipt: Bool
     public let hasEmbeddedSparkle: Bool
     public let appUpdateYML: URL?
@@ -84,6 +85,7 @@ public struct AppScanner: Sendable {
             currentVersion: plist["CFBundleShortVersionString"],
             buildVersion: plist["CFBundleVersion"],
             feedURLString: plist["SUFeedURL"],
+            publicEDKey: plist["SUPublicEDKey"],
             hasMASReceipt: fm.fileExists(atPath: contents.appendingPathComponent("_MASReceipt").path),
             hasEmbeddedSparkle: hasEmbeddedSparkle,
             appUpdateYML: fm.fileExists(atPath: updateYML.path) ? updateYML : nil

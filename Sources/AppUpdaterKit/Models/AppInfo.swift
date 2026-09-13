@@ -10,6 +10,9 @@ public struct AppInfo: Identifiable, Hashable, Codable, Sendable {
     public let currentVersion: String?
     public let buildVersion: String?
     public let source: AppSource
+    /// `Info.plist` 里的 `SUPublicEDKey`：Sparkle 的 Ed25519 公钥（base64）。
+    /// 有它才能在下载后验证安装包确实出自该应用的开发者；没有就只能标为「未校验」。
+    public let publicEDKey: String?
 
     public var id: String { path.path }
 
@@ -19,7 +22,8 @@ public struct AppInfo: Identifiable, Hashable, Codable, Sendable {
         path: URL,
         currentVersion: String?,
         buildVersion: String?,
-        source: AppSource
+        source: AppSource,
+        publicEDKey: String? = nil
     ) {
         self.name = name
         self.bundleID = bundleID
@@ -27,6 +31,13 @@ public struct AppInfo: Identifiable, Hashable, Codable, Sendable {
         self.currentVersion = currentVersion
         self.buildVersion = buildVersion
         self.source = source
+        self.publicEDKey = publicEDKey
+    }
+
+    /// 该应用是否公布了签名公钥，即「下载后能不能做密码学校验」。
+    public var canVerifySignature: Bool {
+        guard let publicEDKey else { return false }
+        return !publicEDKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// 用于首字母色块的字符。

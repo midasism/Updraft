@@ -28,12 +28,7 @@ public struct CheckEngine: Sendable {
             switch app.source {
             case .homebrewCask(let token):
                 if let latest = outdated[token] {
-                    results.append(AppUpdate(app: app, result: .updateAvailable(
-                        latest: latest,
-                        downloadURL: nil,
-                        releaseNotesURL: nil,
-                        downloadSize: nil
-                    )))
+                    results.append(AppUpdate(app: app, result: .updateAvailable(ReleaseInfo(version: latest))))
                 } else {
                     results.append(AppUpdate(app: app, result: .upToDate(latest: app.currentVersion ?? "—")))
                 }
@@ -42,7 +37,7 @@ public struct CheckEngine: Sendable {
                 pending.append(app)
 
             case .appStore:
-                results.append(AppUpdate(app: app, result: .unsupported(reason: "App Store 管理，计划 v0.2 支持")))
+                results.append(AppUpdate(app: app, result: .unsupported(reason: "App Store 管理，需在 App Store 内更新")))
 
             case .microsoftAutoUpdate:
                 results.append(AppUpdate(app: app, result: .unsupported(reason: "由 Microsoft AutoUpdate 管理")))

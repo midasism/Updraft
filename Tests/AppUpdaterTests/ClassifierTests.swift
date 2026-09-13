@@ -184,7 +184,11 @@ final class AppUpdatePresentationTests: XCTestCase {
     func testDetailTextForUpdateIncludesVersionsAndSize() {
         let update = AppUpdate(
             app: makeApp("IINA", version: "1.3.5"),
-            result: .updateAvailable(latest: "1.4.4", downloadURL: nil, releaseNotesURL: nil, downloadSize: 109_301_417)
+            result: .updateAvailable(ReleaseInfo(
+                version: "1.4.4",
+                downloadURL: URL(string: "https://dl.iina.io/IINA.v1.4.4.dmg"),
+                size: 109_301_417
+            ))
         )
         XCTAssertTrue(update.detailText.contains("1.3.5 → 1.4.4"))
         XCTAssertTrue(update.detailText.contains("Sparkle"))
@@ -194,7 +198,7 @@ final class AppUpdatePresentationTests: XCTestCase {
     func testDetailTextOmitsSizeWhenUnknown() {
         let update = AppUpdate(
             app: makeApp("PopClip", version: "2024.1"),
-            result: .updateAvailable(latest: "2024.2", downloadURL: nil, releaseNotesURL: nil, downloadSize: nil)
+            result: .updateAvailable(ReleaseInfo(version: "2024.2", downloadURL: nil))
         )
         XCTAssertFalse(update.detailText.contains("MB"))
         XCTAssertTrue(update.detailText.contains("2024.1 → 2024.2"))

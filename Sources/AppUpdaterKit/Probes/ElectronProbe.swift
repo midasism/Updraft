@@ -105,12 +105,12 @@ public struct ElectronProbe: Sendable {
             )
 
             if isNewer {
-                return .updateAvailable(
-                    latest: latest,
+                return .updateAvailable(ReleaseInfo(
+                    version: latest,
                     downloadURL: asset?.url,
-                    releaseNotesURL: (json["html_url"] as? String).flatMap(URL.init(string:)),
-                    downloadSize: asset?.size
-                )
+                    size: asset?.size,
+                    releaseNotesURL: (json["html_url"] as? String).flatMap(URL.init(string:))
+                ))
             }
             return .upToDate(latest: latest)
         } catch {
@@ -150,12 +150,11 @@ public struct ElectronProbe: Sendable {
             )
 
             if isNewer {
-                return .updateAvailable(
-                    latest: version,
+                return .updateAvailable(ReleaseInfo(
+                    version: version,
                     downloadURL: downloadURL,
-                    releaseNotesURL: nil,
-                    downloadSize: size
-                )
+                    size: size
+                ))
             }
             return .upToDate(latest: version)
         } catch {

@@ -4,25 +4,37 @@ import Foundation
 public struct AppcastItem: Equatable, Sendable {
     public var shortVersion: String?
     public var buildVersion: String?
+    /// 完整安装包的地址。
+    ///
+    /// 注意：绝不能是 `<sparkle:deltas>` 里的增量补丁。补丁（魔数 `spk!`）只是
+    /// 新旧版本之间的二进制差分，必须由 Sparkle 拿着旧包来应用，单独下载装不上。
     public var downloadURL: URL?
     public var size: Int64?
+    /// `sparkle:edSignature`，Ed25519 签名，用于下载后校验安装包真伪。
+    public var edSignature: String?
     public var releaseNotesURL: URL?
     public var minimumSystemVersion: String?
+    /// 该版本提供了几个增量补丁。仅用于展示，不参与下载。
+    public var deltaCount: Int
 
     public init(
         shortVersion: String? = nil,
         buildVersion: String? = nil,
         downloadURL: URL? = nil,
         size: Int64? = nil,
+        edSignature: String? = nil,
         releaseNotesURL: URL? = nil,
-        minimumSystemVersion: String? = nil
+        minimumSystemVersion: String? = nil,
+        deltaCount: Int = 0
     ) {
         self.shortVersion = shortVersion
         self.buildVersion = buildVersion
         self.downloadURL = downloadURL
         self.size = size
+        self.edSignature = edSignature
         self.releaseNotesURL = releaseNotesURL
         self.minimumSystemVersion = minimumSystemVersion
+        self.deltaCount = deltaCount
     }
 
     /// 版本号缺失时用 RSS 的 `<title>` 兜底。
@@ -79,6 +91,12 @@ public struct Appcast: Equatable, Sendable {
 ///
 /// 关闭命名空间处理后，`elementName` 会保留 `sparkle:` 前缀，因此按前缀归一化即可，
 /// 不必为解析引入第三方 XML 依赖。
+///
+/// 这里有个必须守住的规则：`<sparkle:deltas>` 里面也挂着 `<enclosure>`，但它们指向的是
+/// 增量补丁，不是安装包。AlDente / IINA / Rectangle 这些应用的 appcast 里，
+/// 补丁条目排在正式包**后面**，一旦按"后写覆盖先写"处理，界面上就会显示补丁的地址和体积
+/// （表现为"下载下来是个 .delta 文件，装不了"）。因此这里做两件事：
+/// 记录 `deltas` 的嵌套深度并忽略其中的 `enclosure`，同时让正式包的字段**先到先得**。
 public enum AppcastParser {
     public static func parse(_ xml: String) -> Appcast {
         guard let data = xml.data(using: .utf8) else { return Appcast() }
@@ -98,6 +116,8 @@ public enum AppcastParser {
         private var current: AppcastItem?
         private var currentTitle: String?
         private var buffer = ""
+        /// 大于 0 表示正处在 `<sparkle:deltas>` 里面。
+        private var deltaDepth = 0
 
         private func normalized(_ name: String) -> String {
             let bare = name.split(separator: ":").last.map(String.init) ?? name
@@ -117,19 +137,41 @@ public enum AppcastParser {
             case "item":
                 current = AppcastItem()
                 currentTitle = nil
+                deltaDepth = 0
+
+            case "deltas":
+                if current != nil { deltaDepth += 1 }
 
             case "enclosure":
                 guard current != nil else { break }
-                if let raw = attributeDict["url"], let url = URL(string: raw) {
+
+                // 增量补丁：只记数，绝不写入下载字段。
+                if deltaDepth > 0 {
+                    current?.deltaCount += 1
+                    break
+                }
+
+                // 完整包：先到先得，避免被同一 item 里的其他 enclosure 覆盖。
+                if current?.downloadURL == nil,
+                   let raw = attributeDict["url"],
+                   let url = URL(string: raw) {
                     current?.downloadURL = url
                 }
-                if let raw = attributeDict["length"], let size = Int64(raw) {
+                if current?.size == nil,
+                   let raw = attributeDict["length"],
+                   let size = Int64(raw) {
                     current?.size = size
                 }
-                if let raw = attributeDict["sparkle:shortVersionString"] {
+                if current?.edSignature == nil,
+                   let raw = attributeDict["sparkle:edSignature"] {
+                    current?.edSignature = raw
+                }
+                if current?.shortVersion == nil,
+                   let raw = attributeDict["sparkle:shortVersionString"] {
                     current?.shortVersion = raw
                 }
-                if let raw = attributeDict["sparkle:version"], current?.buildVersion == nil {
+                if current?.buildVersion == nil,
+                   let raw = attributeDict["sparkle:version"] {
                     current?.buildVersion = raw
                 }
 
@@ -166,6 +208,10 @@ public enum AppcastParser {
                 }
                 current = nil
                 currentTitle = nil
+                deltaDepth = 0
+
+            case "deltas":
+                if deltaDepth > 0 { deltaDepth -= 1 }
 
             case "title":
                 if current != nil {

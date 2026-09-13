@@ -11,13 +11,17 @@ public struct ContentView: View {
         VStack(spacing: 0) {
             header
             Divider()
+            if let notice = store.recoveryNotice {
+                recoveryBanner(notice)
+                Divider()
+            }
             statsRow
             Divider()
             content
         }
         .frame(minWidth: 760, minHeight: 520)
-        .sheet(isPresented: $store.isShowingLog) {
-            LogSheet(store: store)
+        .sheet(item: $store.job) { _ in
+            UpgradeSheet(store: store)
         }
     }
 
@@ -42,6 +46,13 @@ public struct ContentView: View {
                     .labelStyle(.titleAndIcon)
             }
 
+            if store.automatedUpdateCount > 1, store.job?.isRunning != true {
+                Button("全部升级") {
+                    store.requestUpgradeAll()
+                }
+                .disabled(store.isChecking)
+            }
+
             Button {
                 Task { await store.check() }
             } label: {
@@ -53,7 +64,7 @@ public struct ContentView: View {
                 }
                 .frame(minWidth: 68)
             }
-            .disabled(store.isChecking)
+            .disabled(store.isChecking || store.job?.isRunning == true)
         }
         .padding(.leading, 20)
         .padding(.trailing, 20)
@@ -68,6 +79,30 @@ public struct ContentView: View {
     }
 
     // MARK: - 统计卡片
+
+    /// 上一次安装被中断留下的残留被清理/抢救过，如实告知。
+    private func recoveryBanner(_ notice: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "arrow.counterclockwise.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(.orange)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("检测到上一次升级被中断")
+                    .font(.system(size: 12, weight: .medium))
+                Text(notice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button("知道了") { store.dismissRecoveryNotice() }
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .background(Color.orange.opacity(0.10))
+    }
 
     private var statsRow: some View {
         HStack(spacing: 12) {

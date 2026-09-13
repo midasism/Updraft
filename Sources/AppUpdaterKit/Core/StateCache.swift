@@ -18,7 +18,9 @@ public struct StateCache: Sendable {
                 .first ?? FileManager.default.temporaryDirectory
             self.fileURL = base
                 .appendingPathComponent("AppUpdater", isDirectory: true)
-                .appendingPathComponent("state.json")
+                // v0.2 换了 UpdateResult 的形状，换文件名而不是让旧缓存解码失败再兜底，
+                // 免得旧缓存被当成"检查结果为空"。
+                .appendingPathComponent("state-v2.json")
         }
     }
 

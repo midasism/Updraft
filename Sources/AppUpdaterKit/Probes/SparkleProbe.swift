@@ -27,12 +27,19 @@ public struct SparkleProbe: Sendable {
             )
 
             if isNewer {
-                return .updateAvailable(
-                    latest: latestVersion,
+                // 兜底：万一解析器将来又把增量补丁当成正式包，这里必须拦下来。
+                // `.delta` 是二进制差分补丁，必须由 Sparkle 拿着旧包应用，单独下载永远装不上。
+                if latest.downloadURL?.pathExtension.lowercased() == "delta" {
+                    return .failed(reason: "更新源只提供了增量补丁，没有完整安装包")
+                }
+
+                return .updateAvailable(ReleaseInfo(
+                    version: latestVersion,
                     downloadURL: latest.downloadURL,
-                    releaseNotesURL: latest.releaseNotesURL,
-                    downloadSize: latest.size
-                )
+                    size: latest.size,
+                    edSignature: latest.edSignature,
+                    releaseNotesURL: latest.releaseNotesURL
+                ))
             }
             return .upToDate(latest: latestVersion)
         } catch {
