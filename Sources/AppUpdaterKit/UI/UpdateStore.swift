@@ -260,13 +260,24 @@ public final class UpdateStore: ObservableObject {
     }
 
     /// 开始执行任务。串行跑完所有条目，单个失败不影响后续。
+    ///
+    /// 取消的语义是「当前这一项做完就停」：只在条目边界检查取消标志。
+    /// 中途打断原子换包会留下"旧包已挪走、新包未就位"的中间态，不值得为省几秒钟去冒。
     public func runJob() async {
         guard var working = job, !working.isRunning else { return }
         working.isRunning = true
         job = working
 
+        var cancelledAt: Int?
+
         for index in working.items.indices {
             guard var current = job, current.isRunning, index < current.items.count else { return }
+
+            if current.cancelRequested {
+                cancelledAt = index
+                break
+            }
+
             current.currentIndex = index
             current.phase = nil
             current.runningLog = ""
@@ -303,17 +314,41 @@ public final class UpdateStore: ObservableObject {
             job = updated
         }
 
-        guard var finished = job else { return }
-        finished.isRunning = false
-        finished.isFinished = true
-        job = finished
+        finish(cancellingFrom: cancelledAt)
+        await refreshTouchedApps()
+    }
 
-        // 只重查刚刚动过的那些应用，而不是整机重扫一遍。
-        //
-        // 这里过去是 `await check()`：重建 brew 索引 + 遍历 /Applications + 对四十多个
-        // 应用重新发一轮网络请求，用户只能干等；结果里真正会变的往往只有刚才升级的那一个，
-        // 其余几十条的答案是白问的。
-        await refresh(ids: Set(finished.items.map(\.app.id)))
+    /// 请求取消。
+    ///
+    /// 不做"立即中断"：原子换包被打断的话，目标应用会停在"旧包已挪走、新包未就位"
+    /// 的中间态，比多等几秒糟糕得多。置位之后面板会明确显示「将在当前应用完成后停止」，
+    /// 用户不必再盯着一个看起来不动的进度条。
+    public func cancelJob() {
+        guard var working = job, working.isRunning, !working.cancelRequested else { return }
+        working.cancelRequested = true
+        job = working
+    }
+
+    /// 收尾：把还没处理的条目按「已取消」补齐，然后把任务置为已结束。
+    private func finish(cancellingFrom index: Int?) {
+        guard var working = job else { return }
+        if let index {
+            working.outcomes.append(contentsOf: working.cancelRemaining(from: index))
+        }
+        working.isRunning = false
+        working.isFinished = true
+        working.phase = nil
+        job = working
+    }
+
+    /// 只重查刚刚动过的那些应用，而不是整机重扫一遍。
+    ///
+    /// 这里过去是 `await check()`：重建 brew 索引 + 遍历 /Applications + 对四十多个
+    /// 应用重新发一轮网络请求，用户只能干等；结果里真正会变的往往只有刚才升级的那一个，
+    /// 其余几十条的答案是白问的。
+    private func refreshTouchedApps() async {
+        guard let job else { return }
+        await refresh(ids: Set(job.items.map(\.app.id)))
     }
 
     /// 关闭任务面板。结果会保留到下次打开。

@@ -51,10 +51,14 @@ struct UpgradeSheet: View {
 
     private func subtitle(_ job: UpgradeJob) -> String {
         if job.isRunning {
-            return "正在处理第 \(job.currentIndex + 1) / \(job.items.count) 项"
+            let progress = "正在处理第 \(job.currentIndex + 1) / \(job.items.count) 项"
+            return job.cancelRequested ? progress + " · 已请求取消" : progress
         }
         if job.isFinished {
-            return "成功 \(job.succeededCount) 项 · 失败 \(job.failedCount) 项"
+            var parts = ["成功 \(job.succeededCount) 项"]
+            if job.failedCount > 0 { parts.append("失败 \(job.failedCount) 项") }
+            if job.cancelledCount > 0 { parts.append("取消 \(job.cancelledCount) 项") }
+            return parts.joined(separator: " · ")
         }
         if job.items.count == 1 {
             return "确认后开始，全程不修改其他应用"
@@ -275,9 +279,9 @@ struct UpgradeSheet: View {
     private func outcomeCard(_ outcome: UpgradeJob.Outcome) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Image(systemName: outcome.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                Image(systemName: symbol(for: outcome))
                     .font(.system(size: 13))
-                    .foregroundStyle(outcome.succeeded ? Color.green : Color.orange)
+                    .foregroundStyle(tint(for: outcome))
                 Text(outcome.appName)
                     .font(.system(size: 13, weight: .medium))
                 Text("\(outcome.fromVersion ?? "?") → \(outcome.toVersion)")
@@ -288,7 +292,7 @@ struct UpgradeSheet: View {
 
             Text(outcome.summary)
                 .font(.system(size: 12))
-                .foregroundStyle(outcome.succeeded ? Color.secondary : Color.orange)
+                .foregroundStyle(outcome.succeeded ? Color.secondary : tint(for: outcome))
                 .fixedSize(horizontal: false, vertical: true)
 
             if outcome.rolledBack {
@@ -329,6 +333,17 @@ struct UpgradeSheet: View {
 
     // MARK: - 底部
 
+    /// 取消不该穿成失败的马甲：三种结果各给一套图标与颜色。
+    private func symbol(for outcome: UpgradeJob.Outcome) -> String {
+        if outcome.cancelled { return "minus.circle" }
+        return outcome.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+    }
+
+    private func tint(for outcome: UpgradeJob.Outcome) -> Color {
+        if outcome.cancelled { return .secondary }
+        return outcome.succeeded ? .green : .orange
+    }
+
     @ViewBuilder
     private func footer(_ job: UpgradeJob) -> some View {
         HStack(spacing: 10) {
@@ -337,16 +352,29 @@ struct UpgradeSheet: View {
                     Text("有 \(job.failedCount) 项未完成，可查看上方原因后重试")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                } else if job.cancelledCount > 0 {
+                    Text("已取消 \(job.cancelledCount) 项，剩下的不会再动手")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("完成") { store.dismissJob() }
                     .keyboardShortcut(.defaultAction)
             } else if job.isRunning {
-                Text(job.phase?.detail ?? "执行中…")
+                // 运行态必须留一个走得出去的口子。取消只在条目边界生效，
+                // 所以文案要如实说明"当前这一项还会做完"，而不是假装立刻停。
+                Text(job.cancelRequested
+                     ? "已请求取消，当前应用完成后即停止…"
+                     : (job.phase?.detail ?? "执行中…"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
+                Button(job.cancelRequested ? "正在停止…" : "取消升级") {
+                    store.cancelJob()
+                }
+                .keyboardShortcut(.cancelAction)
+                .disabled(job.cancelRequested)
             } else {
                 Spacer()
                 Button("取消") { store.dismissJob() }

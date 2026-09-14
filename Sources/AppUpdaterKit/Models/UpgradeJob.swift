@@ -45,6 +45,8 @@ public struct UpgradeJob: Identifiable, Sendable {
         public let rolledBack: Bool
         public let warnings: [String]
         public let log: String
+        /// 因为用户取消而没有执行。与"失败"分开记：界面上不该把它标成橙色警告。
+        public var cancelled: Bool = false
     }
 
     public let id: UUID
@@ -56,6 +58,9 @@ public struct UpgradeJob: Identifiable, Sendable {
     public var outcomes: [Outcome] = []
     public var isRunning: Bool = false
     public var isFinished: Bool = false
+    /// 已请求取消。语义是「当前这一项照常做完，之后不再往下走」——
+    /// 中途打断原子换包才是真的危险，所以取消只在条目边界生效。
+    public var cancelRequested: Bool = false
 
     public init(items: [Item]) {
         self.id = UUID()
@@ -75,5 +80,33 @@ public struct UpgradeJob: Identifiable, Sendable {
     }
 
     public var succeededCount: Int { outcomes.filter(\.succeeded).count }
-    public var failedCount: Int { outcomes.filter { !$0.succeeded }.count }
+    /// 只算真正的失败：用户主动取消的那些不该被算成"未完成需重试"。
+    public var failedCount: Int { outcomes.filter { !$0.succeeded && !$0.cancelled }.count }
+    public var cancelledCount: Int { outcomes.filter(\.cancelled).count }
+
+    /// 收尾取消：把 `index` 起的未完成条目如实标成「已取消」，并为每条补一份结果，
+    /// 这样结果页能看见"哪些没做"，而不是静默消失。
+    ///
+    /// 抽成纯函数是为了能直接断言"取消后剩余条目变成什么状态"，不必真跑一次升级。
+    public mutating func cancelRemaining(from index: Int) -> [Outcome] {
+        guard index < items.count else { return [] }
+        var produced: [Outcome] = []
+        for position in index..<items.count where !items[position].state.isTerminal {
+            items[position].state = .skipped("已取消")
+            produced.append(Outcome(
+                id: items[position].id,
+                appName: items[position].app.name,
+                fromVersion: items[position].app.currentVersion,
+                toVersion: items[position].release.version,
+                succeeded: false,
+                summary: "已取消，未执行",
+                backupPath: nil,
+                rolledBack: false,
+                warnings: [],
+                log: "",
+                cancelled: true
+            ))
+        }
+        return produced
+    }
 }
