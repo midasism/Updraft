@@ -53,25 +53,28 @@ jobs:
           SKIP_APP_BUILD: '1'
         run: scripts/build-dmg.sh
 
-      - name: 压 zip 并生成校验和
+      - name: 收集产物并生成校验和
         env:
           ZIP: ${{ steps.meta.outputs.zip }}
           DMG: ${{ steps.meta.outputs.dmg }}
         run: |
           # 必须是 ditto：zip -r 会丢掉 .app 内部的符号链接与权限位，解压后包是坏的
           ditto -c -k --sequesterRsrc --keepParent dist/AppUpdater.app "$ZIP"
-          shasum -a 256 "$ZIP" "dist/$DMG" > SHA256SUMS.txt
-          ls -lh "$ZIP" "dist/$DMG"
+
+          # 两个包收进同一个目录再算校验和，SHA256SUMS.txt 里才能是裸文件名——
+          # 用户把三个文件下到同一个文件夹后，shasum -a 256 -c 才直接可用
+          mkdir -p artifacts
+          cp "$ZIP" "dist/$DMG" artifacts/
+          cd artifacts
+          shasum -a 256 "$ZIP" "$DMG" > SHA256SUMS.txt
+          ls -lh
           cat SHA256SUMS.txt
 
       # 每次运行都留一份可直接下载的构建产物（Actions 页面底部 Artifacts）
       - uses: actions/upload-artifact@v4
         with:
           name: Updraft-${{ steps.meta.outputs.version }}
-          path: |
-            ${{ steps.meta.outputs.zip }}
-            dist/${{ steps.meta.outputs.dmg }}
-            SHA256SUMS.txt
+          path: artifacts/
           retention-days: 90
 
       - name: 创建 Release
@@ -79,11 +82,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
-          ZIP: ${{ steps.meta.outputs.zip }}
-          DMG: ${{ steps.meta.outputs.dmg }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "$ZIP" "dist/$DMG" SHA256SUMS.txt \
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
             --title "Updraft v$VERSION" \
             --generate-notes \
             --verify-tag

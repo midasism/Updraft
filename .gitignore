@@ -1,6 +1,7 @@
 .build/
 .swiftpm/
 dist/
+artifacts/
 .DS_Store
 *.xcodeproj
 .workbuddy/
