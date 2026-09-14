@@ -66,7 +66,13 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 
 ### 下载安装包
 
-从 [Releases](https://github.com/midasism/Updraft/releases/latest) 下载 `Updraft-x.y.z-macOS.zip`，解压后把 `AppUpdater.app` 拖进 `/Applications`。
+从 [Releases](https://github.com/midasism/Updraft/releases/latest) 下载 `Updraft-x.y.z-macOS.dmg`，打开后把图标拖进「应用程序」即可：
+
+<p align="center">
+  <img src="docs/screenshots/dmg-window.png" width="560" alt="DMG 安装窗口：把应用拖进「应用程序」">
+</p>
+
+也可以下载 `Updraft-x.y.z-macOS.zip`，解压后把 `AppUpdater.app` 拖进 `/Applications`——两者内容一致，DMG 只是多了一层拖拽窗口。
 
 > [!IMPORTANT]
 > 安装包只做了临时签名（ad-hoc），**没有走 Apple 公证**。首次打开会提示「无法验证开发者」，右键 →「打开」即可；或先移除隔离属性：
@@ -75,7 +81,7 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 > xattr -dr com.apple.quarantine /Applications/AppUpdater.app
 > ```
 >
-> 顺手核对一下校验和更稳，Release 里附了 `SHA256SUMS.txt`：
+> 顺手核对一下校验和更稳。把包和 `SHA256SUMS.txt` 下到同一个文件夹后：
 >
 > ```bash
 > shasum -a 256 -c SHA256SUMS.txt
@@ -93,14 +99,16 @@ scripts/build-app.sh        # 编译 release，组装成 dist/AppUpdater.app
 open dist/AppUpdater.app
 ```
 
-`build-app.sh` 支持注入版本号，本地出包时会写进 `Info.plist`：
+要出和 Release 里一样的 DMG：
 
 ```bash
-VERSION=0.3.0 BUILD_NUMBER=7 scripts/build-app.sh
+VERSION=0.3.0 scripts/build-dmg.sh     # 出 dist/Updraft-0.3.0-macOS.dmg
 ```
 
+两个脚本都支持用 `VERSION` 注入版本号（写进 `Info.plist`），`build-app.sh` 另有 `BUILD_NUMBER`。
+
 > [!TIP]
-> 系统要求 macOS 13+，以及 Xcode 命令行工具（Swift 5.9+）。项目**零第三方依赖**，不需要 `brew install` 任何东西。
+> 系统要求 macOS 13+，以及 Xcode 命令行工具（Swift 5.9+）。Swift 包**零第三方依赖**，不需要 `brew install` 任何东西。`build-dmg.sh` 会自己把打包工具 `dmgbuild` 装进 `.build/` 下的虚拟环境，同样不碰系统 Python。
 
 ## 使用
 
@@ -276,6 +284,19 @@ swift test  --disable-sandbox      # 114 个单元测试
 > 若报 `sandbox-exec: sandbox_apply: Operation not permitted`，说明 SwiftPM 编译 manifest 时套的内层沙箱被挡了（受限终端、沙箱化 IDE、CI 容器里都常见），加 `--disable-sandbox` 即可。这是环境问题，不是代码问题。
 
 CI 在 `macos-latest` 上跑 `swift build`（Debug + Release）与 `swift test`，见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
+
+### 打包与发布
+
+| 脚本 | 产出 |
+|---|---|
+| `scripts/build-app.sh` | `dist/AppUpdater.app`——编译 release、组装 bundle、临时签名 |
+| `scripts/build-dmg.sh` | `dist/Updraft-<版本>-macOS.dmg`——调前者出 `.app`，再套一层拖拽安装窗口 |
+
+发布走 tag：推一个 `v*` 标签，[`.github/workflows/release.yml`](.github/workflows/release.yml) 会自动编译、出 DMG 与 zip、算 SHA-256、建 Release。手动触发同一个工作流则只出 Actions Artifacts，不建 Release，用来单独验证流水线。
+
+安装窗口的布局写在 `scripts/dmg-settings.py`，背景图由 `tools/DmgBackground.swift` 生成。**这两处共用一套坐标**（窗口左下角为原点）：窗口左上角那个箭头是画在背景图里的，改图标坐标就必须同步改背景图，否则箭头会和图标错位——没有自动校验，只能靠人盯。
+
+DMG 用 [dmgbuild](https://github.com/dmgbuild/dmgbuild) 而不是 `hdiutil` + AppleScript：窗口里图标的摆位存在卷根的 `.DS_Store` 里，用 AppleScript 摆图标等于驱动 Finder 去改这份 `.DS_Store`，而 Finder 自动化需要 GUI 会话与「自动化」权限，CI 上不可靠。dmgbuild 自己直接写 `.DS_Store`，全程不碰 Finder。
 
 ### 目录结构
 
