@@ -3,8 +3,18 @@ name: CI
 on:
   push:
     branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Package.swift'
+      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 concurrency:
@@ -21,11 +31,10 @@ jobs:
       - name: Swift 版本
         run: swift --version
 
-      - name: 编译（Debug）
-        run: swift build --disable-sandbox
-
+      # swift test 会构建整个包（含可执行目标 AppUpdater），编译与测试一步覆盖，无需单独的 Debug 构建
       - name: 单元测试
         run: swift test --disable-sandbox
 
-      - name: 编译（Release）
+      # release 配置走整模块优化，与 Debug 是两条不同的编译路径；scripts/build-app.sh 正是用它出包
+      - name: 编译 Release
         run: swift build -c release --disable-sandbox
