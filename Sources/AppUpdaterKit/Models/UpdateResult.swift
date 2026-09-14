@@ -58,6 +58,20 @@ public struct AppUpdate: Identifiable, Equatable, Codable, Sendable {
         self.checkedAt = checkedAt
     }
 
+    /// 列表排序：先按分组，再按名称。
+    ///
+    /// 全量检查与增量刷新共用同一个比较器——两条路径各写一份的话，
+    /// 一次局部刷新就会让列表顺序莫名其妙地变一下。
+    public static func listOrder(_ left: AppUpdate, _ right: AppUpdate) -> Bool {
+        if left.group != right.group { return left.group.rawValue < right.group.rawValue }
+        return left.app.name.localizedStandardCompare(right.app.name) == .orderedAscending
+    }
+
+    /// 检查结果换了，应用本身没变（只是又探了一次）。
+    public func replacing(result: UpdateResult, at date: Date = Date()) -> AppUpdate {
+        AppUpdate(app: app, result: result, checkedAt: date)
+    }
+
     /// 列表分组。
     public var group: UpdateGroup {
         switch result {

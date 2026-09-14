@@ -110,19 +110,32 @@ public enum BrewService {
 
     // MARK: - 检测
 
-    /// 一次调用拿到所有待更新 cask。逐个 `brew info` 会慢到不可接受，必须批处理。
-    /// 返回 token → 最新版本号。
-    public static func outdatedCasks() async -> [String: String] {
-        guard let brew = brewPath() else { return [:] }
+    /// 一次调用拿到待更新 cask。逐个 `brew info` 会慢到不可接受，必须批处理。
+    ///
+    /// - Parameter scopedTo: 只比对这些 token。增量检查只关心刚动过的那几个 cask，
+    ///   没必要每次都比一遍全表。收窄后 brew 若报错（例如 token 刚被卸载），
+    ///   自动退回全量查询——宁可多花一次调用，也不能因为局部失败而漏报更新。
+    /// - Returns: token → 最新版本号。`nil` 表示没找到 Homebrew（问不了），
+    ///   与"问了，没有过期项"（空字典）是两回事，调用方必须分开处理。
+    public static func outdatedCasks(scopedTo tokens: [String]? = nil) async -> [String: String]? {
+        guard let brew = brewPath() else { return nil }
 
-        let result = await ProcessRunner.run(
-            executable: brew,
-            arguments: ["outdated", "--cask", "--greedy", "--json=v2"]
-        )
+        if let tokens, !tokens.isEmpty, let scoped = await runOutdated(brew: brew, only: tokens) {
+            return scoped
+        }
+
+        return await runOutdated(brew: brew, only: nil)
+    }
+
+    private static func runOutdated(brew: String, only tokens: [String]?) async -> [String: String]? {
+        var arguments = ["outdated", "--cask", "--greedy", "--json=v2"]
+        if let tokens { arguments.append(contentsOf: tokens) }
+
+        let result = await ProcessRunner.run(executable: brew, arguments: arguments)
         guard result.exitCode == 0,
               let data = result.stdout.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return [:]
+            return nil
         }
 
         var outdated: [String: String] = [:]

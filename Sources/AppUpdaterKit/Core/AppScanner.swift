@@ -46,6 +46,20 @@ public struct AppScanner: Sendable {
         return found.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
+    /// 只读一个包。增量刷新用它替代整目录扫描。
+    ///
+    /// 路径不再是可用的 `.app` 目录时返回 `nil`（包被删掉、被换成文件、被挪走），
+    /// 调用方必须如实处理这种情况，而不是伪造一个空条目糊过去。
+    public func inspect(bundleAt appURL: URL) -> ScannedApp? {
+        var isDirectory: ObjCBool = false
+        guard appURL.pathExtension == "app",
+              FileManager.default.fileExists(atPath: appURL.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return nil
+        }
+        return inspect(appURL)
+    }
+
     private func appBundles(in root: URL) -> [URL] {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(

@@ -11,19 +11,30 @@ public struct AppClassifier: Sendable {
         self.caskIndex = caskIndex
     }
 
-    public func classify(_ scanned: ScannedApp) -> AppInfo {
+    /// - Parameter trustedFallback: brew 索引拿不到时的兜底来源。
+    ///
+    ///   增量刷新只重读了变更过的那一个包，没有索引就无法重新判断它是不是 Homebrew cask。
+    ///   此时沿用上一次全量扫描给出的来源，比凭空把它降级成"未知来源"准确得多——
+    ///   对一个刚刚被本工具升过级的应用来说，"它归谁管"这件事根本没变。
+    public func classify(_ scanned: ScannedApp, trustedFallback: AppSource? = nil) -> AppInfo {
         AppInfo(
             name: scanned.name,
             bundleID: scanned.bundleID,
             path: scanned.path,
             currentVersion: scanned.currentVersion,
             buildVersion: scanned.buildVersion,
-            source: source(for: scanned),
+            source: source(for: scanned, trustedFallback: trustedFallback),
             publicEDKey: scanned.publicEDKey
         )
     }
 
-    private func source(for scanned: ScannedApp) -> AppSource {
+    private func source(for scanned: ScannedApp, trustedFallback: AppSource?) -> AppSource {
+        // 0. 没有索引就没有判断依据，只能沿用上一次的结论。
+        //    有索引时下面的判定是完整的，不需要兜底。
+        if caskIndex == nil, let trustedFallback {
+            return trustedFallback
+        }
+
         // 1. Homebrew cask —— 唯一能全自动升级的一类，优先级最高。
         if let token = caskIndex?.token(forAppFileName: scanned.path.lastPathComponent) {
             return .homebrewCask(token: token)

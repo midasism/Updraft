@@ -50,25 +50,32 @@ public struct ContentView: View {
                 Button("全部升级") {
                     store.requestUpgradeAll()
                 }
-                .disabled(store.isChecking)
+                .disabled(store.isBusy)
             }
 
             Button {
                 Task { await store.check() }
             } label: {
                 HStack(spacing: 6) {
-                    if store.isChecking {
+                    if store.isBusy {
                         ProgressView().controlSize(.small).scaleEffect(0.7)
                     }
-                    Text(store.isChecking ? "检查中…" : "重新检查")
+                    Text(checkButtonTitle)
                 }
                 .frame(minWidth: 68)
             }
-            .disabled(store.isChecking || store.job?.isRunning == true)
+            .disabled(store.isBusy || store.job?.isRunning == true)
         }
         .padding(.leading, 20)
         .padding(.trailing, 20)
         .padding(.vertical, 14)
+    }
+
+    /// 增量刷新与全量扫描的代价差着一个数量级，文案上要让用户看得出来不是同一件事。
+    private var checkButtonTitle: String {
+        if store.isChecking { return "检查中…" }
+        if store.isRefreshing { return "刷新中…" }
+        return "重新检查"
     }
 
     private var subtitleText: String {
@@ -153,7 +160,7 @@ public struct ContentView: View {
             Image(systemName: "shippingbox")
                 .font(.system(size: 28))
                 .foregroundStyle(.tertiary)
-            Text(store.isChecking ? "正在检查…" : "还没有结果")
+            Text(store.isBusy ? "正在检查…" : "还没有结果")
                 .font(.system(size: 13, weight: .medium))
             Text("点右上角「重新检查」开始扫描已安装的应用")
                 .font(.system(size: 12))

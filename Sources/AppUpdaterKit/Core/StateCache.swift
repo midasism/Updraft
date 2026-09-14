@@ -4,7 +4,19 @@ import Foundation
 public struct StateCache: Sendable {
     public struct Snapshot: Codable, Sendable {
         public let updates: [AppUpdate]
+        /// 这份快照的写入时间。增量刷新也会更新它，因此它**不等于**"上次全量检查"。
         public let savedAt: Date
+        /// 上一次**全量**检查的时间。
+        ///
+        /// 增量刷新只重查了少数几个条目，其余条目仍然是全量那一刻的结论；
+        /// 拿 `savedAt` 去当"上次检查"对着没查过的应用撒谎。
+        public let lastFullCheckAt: Date?
+
+        public init(updates: [AppUpdate], savedAt: Date, lastFullCheckAt: Date? = nil) {
+            self.updates = updates
+            self.savedAt = savedAt
+            self.lastFullCheckAt = lastFullCheckAt
+        }
     }
 
     private let fileURL: URL

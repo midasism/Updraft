@@ -6,6 +6,9 @@ import Foundation
 public final class UpdateStore: ObservableObject {
     @Published public private(set) var updates: [AppUpdate] = []
     @Published public private(set) var isChecking = false
+    /// 正在做增量刷新。与 `isChecking`（全量扫描）区分开：前者只重查少数几个应用，
+    /// 界面上的文案与按钮禁用都该按这个区别来。
+    @Published public private(set) var isRefreshing = false
     @Published public private(set) var lastChecked: Date?
     @Published public private(set) var statusMessage = ""
     @Published public private(set) var brewAvailable = true
@@ -16,21 +19,60 @@ public final class UpdateStore: ObservableObject {
     /// 当前升级任务。非 nil 时弹出任务面板。
     @Published public var job: UpgradeJob?
 
+    /// 最近一次增量刷新的规模与耗时。
+    ///
+    /// 界面上不展示，但"升级收尾只重查了 1 项"这句话必须是可测量的——
+    /// 真机验证、日志和回归都靠它，而不是靠读代码相信。
+    public struct RefreshStat: Sendable {
+        /// 本次被重新检查的条目数。
+        public let targets: Int
+        /// 刷新完成时列表的总条目数。
+        public let listSize: Int
+        /// 其中包已不在原路径、只能如实上报的条目数。
+        public let missing: Int
+        public let seconds: Double
+    }
+
+    @Published public private(set) var lastRefresh: RefreshStat?
+
     /// 上次运行被中断留下的残留被处理过，需要让用户知道。
     @Published public private(set) var recoveryNotice: String?
 
-    private let cache = StateCache()
+    private let cache: StateCache
+    /// 检查引擎。全量扫描与增量刷新共用同一个——两条路径都不该有第二套探测逻辑。
+    private let engine: CheckEngine
     private let installer = Installer()
     private let backups = BackupStore()
     private var didRunRecovery = false
 
-    public init() {
+    /// 上一次全量检查用过的 brew 索引。
+    ///
+    /// 索引只在 brew 安装/卸载 cask 时才会变，而升级应用不会——所以增量刷新直接复用它，
+    /// 省掉 `brew list` + `brew info --json=v2` 这一整轮（cask 多的时候是最贵的一笔）。
+    private var caskIndex: BrewCaskIndex?
+    private var lastFullCheckAt: Date?
+
+    public convenience init() {
+        self.init(engine: CheckEngine(), cache: StateCache())
+    }
+
+    /// 供测试注入假探针与临时缓存文件用。
+    init(engine: CheckEngine, cache: StateCache) {
+        self.engine = engine
+        self.cache = cache
+
         if let snapshot = cache.load() {
             updates = snapshot.updates
-            lastChecked = snapshot.savedAt
+            // 增量刷新会把 savedAt 推到现在，但只有部分条目真的被重查过；
+            // 所以"上次检查"取全量时间，取不到（旧版缓存）才退回 savedAt。
+            lastFullCheckAt = snapshot.lastFullCheckAt ?? snapshot.savedAt
+            lastChecked = lastFullCheckAt
             isShowingCachedResult = true
         }
     }
+
+    /// 全量扫描或增量刷新是否正在进行。两者都会改 `updates`，不能并发。
+    public var isBusy: Bool { isChecking || isRefreshing }
 
     // MARK: - 派生数据
 
@@ -90,13 +132,14 @@ public final class UpdateStore: ObservableObject {
     }
 
     public func check() async {
-        guard !isChecking else { return }
+        guard !isBusy else { return }
         isChecking = true
         statusMessage = "正在读取 Homebrew 索引…"
         isShowingCachedResult = false
 
         let index = await BrewService.loadIndex()
         brewAvailable = index != nil
+        caskIndex = index
 
         statusMessage = "正在扫描应用…"
         let scanned = await Task.detached { AppScanner().scan() }.value
@@ -117,7 +160,6 @@ public final class UpdateStore: ObservableObject {
         let detectable = apps.filter { $0.source.isAutoDetectable }.count
         statusMessage = "正在查询 \(detectable) 个应用的更新…"
 
-        let engine = CheckEngine()
         let results = await engine.check(apps: apps) { [weak self] done, total in
             Task { @MainActor in
                 guard let self else { return }
@@ -127,9 +169,64 @@ public final class UpdateStore: ObservableObject {
 
         updates = results
         lastChecked = Date()
+        lastFullCheckAt = lastChecked
         statusMessage = ""
         isChecking = false
-        cache.save(.init(updates: results, savedAt: Date()))
+        saveCache()
+    }
+
+    // MARK: - 增量刷新
+
+    /// 只重新检查 `ids` 指定的应用，不做全量扫描。
+    ///
+    /// 升级完一个应用之后调它，替代过去的"整机重扫一遍"：
+    /// 不重建 brew 索引、不遍历 `/Applications`、不对其余几十个应用再发一轮请求。
+    /// 本机实测全量约 10 秒，增量通常在 1 秒内结束。
+    ///
+    /// 没被点到的条目一律保持原样——它们没有任何理由因为别的应用升级而失去可信度。
+    ///
+    /// - Returns: `false` 表示当前正忙（全量扫描或另一次刷新在跑），调用方应稍后再试。
+    @discardableResult
+    public func refresh(ids: Set<String>) async -> Bool {
+        guard !isBusy else { return false }
+
+        let targets = updates.filter { ids.contains($0.id) }
+        guard !targets.isEmpty else { return true }
+
+        isRefreshing = true
+        // 复用上一次全量检查的索引；没有（冷启动走缓存、或本机没装 Homebrew）就交给
+        // IncrementalChecker 沿用旧来源判定，绝不为了这一刻再去跑一遍 brew info。
+        let index = caskIndex
+        statusMessage = targets.count == 1
+            ? "正在更新 \(targets[0].app.name) 的检查结果…"
+            : "正在更新 \(targets.count) 个应用的检查结果…"
+
+        let started = Date()
+        let report = await IncrementalChecker(engine: engine).refresh(targets: targets, caskIndex: index) { done, total in
+            // 只有一个应用时进度条没有意义，保持上面那句"正在更新 X"更好读。
+            guard total > 1 else { return }
+            Task { @MainActor [weak self] in
+                // 进度回调是异步投递的，收尾之后才轮到也是可能的；此时不该再往回写状态。
+                guard let self, self.isRefreshing else { return }
+                self.statusMessage = "正在重新检查… \(done)/\(total)"
+            }
+        }
+
+        updates = IncrementalChecker.merge(report.all, into: updates)
+        lastRefresh = RefreshStat(
+            targets: targets.count,
+            listSize: updates.count,
+            missing: report.missing.count,
+            seconds: Date().timeIntervalSince(started)
+        )
+        statusMessage = ""
+        isRefreshing = false
+        saveCache()
+        return true
+    }
+
+    private func saveCache() {
+        cache.save(.init(updates: updates, savedAt: Date(), lastFullCheckAt: lastFullCheckAt))
     }
 
     // MARK: - 升级任务的编排
@@ -211,8 +308,12 @@ public final class UpdateStore: ObservableObject {
         finished.isFinished = true
         job = finished
 
-        // 升完了立刻重新检查一遍，让数字反映真实状态。
-        await check()
+        // 只重查刚刚动过的那些应用，而不是整机重扫一遍。
+        //
+        // 这里过去是 `await check()`：重建 brew 索引 + 遍历 /Applications + 对四十多个
+        // 应用重新发一轮网络请求，用户只能干等；结果里真正会变的往往只有刚才升级的那一个，
+        // 其余几十条的答案是白问的。
+        await refresh(ids: Set(finished.items.map(\.app.id)))
     }
 
     /// 关闭任务面板。结果会保留到下次打开。

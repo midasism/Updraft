@@ -44,6 +44,21 @@ if arguments.contains("--plan-all") {
     runAndWait { await InstallCommand.runAll(dryRun: true) }
 }
 
+// 增量刷新：只重查指定的应用，不重新扫描应用目录。
+if let name = value(after: "--refresh") {
+    runAndWait { await RefreshCommand.run(appNames: [name]) }
+}
+
+if arguments.contains("--refresh-all") {
+    runAndWait { await RefreshCommand.run(appNames: []) }
+}
+
+// 走界面状态源跑一次完整升级任务（含升级收尾的增量刷新）。会真实替换 App 包。
+if let name = value(after: "--job") {
+    let code = MainActor.assumeIsolated { JobCommand.run(appName: name) }
+    exit(code)
+}
+
 // 清理上一次被中断的安装残留。
 if arguments.contains("--recover") {
     exit(InstallCommand.recover())
