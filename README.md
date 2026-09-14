@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/midasism/Updraft/actions/workflows/ci.yml"><img src="https://github.com/midasism/Updraft/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/midasism/Updraft/releases/latest"><img src="https://img.shields.io/github/v/release/midasism/Updraft?color=blue" alt="Release"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white" alt="macOS 13+">
   <img src="https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white" alt="Swift 5.9+">
   <img src="https://img.shields.io/badge/dependencies-0-4c1" alt="零第三方依赖">
@@ -63,7 +64,27 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 
 ## 安装
 
-目前只支持从源码构建（尚未发布二进制）：
+### 下载安装包
+
+从 [Releases](https://github.com/midasism/Updraft/releases/latest) 下载 `Updraft-x.y.z-macOS.zip`，解压后把 `AppUpdater.app` 拖进 `/Applications`。
+
+> [!IMPORTANT]
+> 安装包只做了临时签名（ad-hoc），**没有走 Apple 公证**。首次打开会提示「无法验证开发者」，右键 →「打开」即可；或先移除隔离属性：
+>
+> ```bash
+> xattr -dr com.apple.quarantine /Applications/AppUpdater.app
+> ```
+>
+> 顺手核对一下校验和更稳，Release 里附了 `SHA256SUMS.txt`：
+>
+> ```bash
+> shasum -a 256 -c SHA256SUMS.txt
+> ```
+
+> [!NOTE]
+> 发布产物是 **arm64-only**（CI 跑在 Apple Silicon runner 上）。Intel Mac 请走下面的源码构建。
+
+### 从源码构建
 
 ```bash
 git clone https://github.com/midasism/Updraft.git
@@ -72,10 +93,10 @@ scripts/build-app.sh        # 编译 release，组装成 dist/AppUpdater.app
 open dist/AppUpdater.app
 ```
 
-首次打开若提示“无法验证开发者”，右键 →「打开」，或：
+`build-app.sh` 支持注入版本号，本地出包时会写进 `Info.plist`：
 
 ```bash
-xattr -d com.apple.quarantine dist/AppUpdater.app
+VERSION=0.3.0 BUILD_NUMBER=7 scripts/build-app.sh
 ```
 
 > [!TIP]
