@@ -67,7 +67,8 @@ public struct BackupStore: Sendable {
         // 可能因为签名校验不通过而变成废品。
         let result = await ProcessRunner.run(
             executable: "/usr/bin/ditto",
-            arguments: [url.path, destination.path]
+            arguments: [url.path, destination.path],
+            timeout: ProcessRunner.largeCopyTimeout
         )
         guard result.succeeded else {
             try? fm.removeItem(at: container)

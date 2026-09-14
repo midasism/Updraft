@@ -322,10 +322,14 @@ public struct Installer: Sendable {
             }
 
             // ── 阶段七：原子换包 ──
+            // 这一步内部有两件事：把新包拷进目标目录、再用两次 rename 换名。
+            // 界面只能看到同一行文本，所以细节文本要一路透出去。
             emit(.replacing, "正在替换 \(app.path.lastPathComponent)…")
             let displaced: URL
             do {
-                displaced = try await swapIn(newApp: stagedApp, at: app.path)
+                displaced = try await swapIn(newApp: stagedApp, at: app.path) { detail in
+                    emit(.replacing, detail)
+                }
             } catch {
                 throw InstallError.swapFailed(error.localizedDescription)
             }
@@ -380,7 +384,8 @@ public struct Installer: Sendable {
             try FileManager.default.createDirectory(at: unpacked, withIntermediateDirectories: true)
             let result = await ProcessRunner.run(
                 executable: "/usr/bin/ditto",
-                arguments: ["-x", "-k", package.path, unpacked.path]
+                arguments: ["-x", "-k", package.path, unpacked.path],
+                timeout: ProcessRunner.largeCopyTimeout
             )
             guard result.succeeded else {
                 throw InstallError.extractionFailed(result.stderr.isEmpty ? result.stdout : result.stderr)
@@ -455,7 +460,8 @@ public struct Installer: Sendable {
         let destination = staging.appendingPathComponent(found.lastPathComponent, isDirectory: true)
         let result = await ProcessRunner.run(
             executable: "/usr/bin/ditto",
-            arguments: [found.path, destination.path]
+            arguments: [found.path, destination.path],
+            timeout: ProcessRunner.largeCopyTimeout
         )
         guard result.succeeded else {
             throw InstallError.extractionFailed(result.stderr.isEmpty ? result.stdout : result.stderr)
@@ -645,7 +651,13 @@ public struct Installer: Sendable {
     // MARK: - 换包与回滚
 
     /// 原子换包。返回被换下来的旧包路径（尚未删除，供回滚使用）。
-    private func swapIn(newApp: URL, at target: URL) async throws -> URL {
+    ///
+    /// `onProgress` 只传细节文本，用于让界面能区分"在干活"与"卡死了"。
+    private func swapIn(
+        newApp: URL,
+        at target: URL,
+        onProgress: @escaping @Sendable (String) -> Void
+    ) async throws -> URL {
         let fm = FileManager.default
         let directory = target.deletingLastPathComponent()
         let stem = target.deletingPathExtension().lastPathComponent
@@ -656,13 +668,36 @@ public struct Installer: Sendable {
         let staging = directory.appendingPathComponent(".\(stem).\(token).new.\(ext)", isDirectory: true)
         let displaced = directory.appendingPathComponent(".\(stem).\(token).old.\(ext)", isDirectory: true)
 
+        // 拷贝可能持续很久（1 GB 级的包），期间每 3 秒报一次已用时间。
+        // 没有这个心跳，界面上"正在拷贝"与"已经卡死"完全无法区分。
+        let destinationDescription = directory.path
+        onProgress("正在把新包复制到 \(destinationDescription)…")
+        let heartbeat = Task {
+            var elapsed = 0
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if Task.isCancelled { return }
+                elapsed += 3
+                onProgress("正在把新包复制到 \(destinationDescription)… 已用 \(elapsed) 秒")
+            }
+        }
+        defer { heartbeat.cancel() }
+
         let copy = await ProcessRunner.run(
             executable: "/usr/bin/ditto",
-            arguments: [newApp.path, staging.path]
+            arguments: [newApp.path, staging.path],
+            timeout: ProcessRunner.largeCopyTimeout
         )
+        heartbeat.cancel()
+
         guard copy.succeeded else {
+            // ditto 失败或超时会留下半个 1 GB 的目录。必须当场清掉：它带 `.` 前缀，
+            // 在 Finder 里天然不可见，留着就是一块磁盘黑洞（真机上曾留下 1.06 GB）。
+            try? fm.removeItem(at: staging)
             throw InstallError.swapFailed(copy.stderr.isEmpty ? copy.stdout : copy.stderr)
         }
+
+        onProgress("新包已就位，正在换名…")
 
         do {
             try fm.moveItem(at: target, to: displaced)
