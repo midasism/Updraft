@@ -7,14 +7,18 @@ on:
       - 'Sources/**'
       - 'Tests/**'
       - 'Package.swift'
+      - 'scripts/**'
       - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   pull_request:
     branches: [main]
     paths:
       - 'Sources/**'
       - 'Tests/**'
       - 'Package.swift'
+      - 'scripts/**'
       - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 concurrency:

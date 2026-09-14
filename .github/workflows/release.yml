@@ -1,0 +1,78 @@
+name: Release
+
+# 打 v* 标签即发布：编译 release、组装 .app、压 zip、附校验和、创建 Release。
+# 手动触发（Actions 页面 → Run workflow）只出可下载的构建产物，不建 Release。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不含 v 前缀），仅手动触发时使用'
+        required: true
+        default: '0.1.0'
+
+# 创建 Release 需要写 contents 权限；默认 token 只有只读
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: package
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gh release create --generate-notes 要读历史 tag 来算增量说明
+          fetch-depth: 0
+
+      - name: 解析版本号
+        id: meta
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "zip=Updraft-${VERSION}-macOS.zip" >> "$GITHUB_OUTPUT"
+          echo "→ 版本 $VERSION"
+
+      - name: 编译并组装 .app
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: scripts/build-app.sh
+
+      - name: 打包 zip
+        env:
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          # 必须是 ditto：zip -r 会丢掉 .app 内部的符号链接与权限位，解压后包是坏的
+          ditto -c -k --sequesterRsrc --keepParent dist/AppUpdater.app "$ZIP"
+          shasum -a 256 "$ZIP" > SHA256SUMS.txt
+          ls -lh "$ZIP"
+          cat SHA256SUMS.txt
+
+      # 每次运行都留一份可直接下载的构建产物（Actions 页面底部 Artifacts）
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Updraft-${{ steps.meta.outputs.version }}
+          path: |
+            ${{ steps.meta.outputs.zip }}
+            SHA256SUMS.txt
+          retention-days: 90
+
+      - name: 创建 Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$ZIP" SHA256SUMS.txt \
+            --title "Updraft v$VERSION" \
+            --generate-notes \
+            --verify-tag

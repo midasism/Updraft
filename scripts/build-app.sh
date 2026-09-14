@@ -11,7 +11,9 @@ cd "$ROOT"
 APP_NAME="AppUpdater"
 DISPLAY_NAME="App 更新"
 BUNDLE_ID="com.local.appupdater"
-VERSION="0.1.0"
+# 版本号可由外部注入（发布流水线按 tag 传入），本地直接跑则用默认值。
+VERSION="${VERSION:-0.1.0}"
+BUILD_NUMBER="${BUILD_NUMBER:-1}"
 DIST="$ROOT/dist"
 APP="$DIST/$APP_NAME.app"
 
@@ -57,7 +59,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key>
     <string>$VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
