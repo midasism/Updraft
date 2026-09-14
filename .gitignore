@@ -4,3 +4,6 @@ dist/
 .DS_Store
 *.xcodeproj
 .workbuddy/
+
+# tools/IconPreview.swift 的生成物，需要时重跑即可
+docs/icon-preview.png
