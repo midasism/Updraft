@@ -14,6 +14,11 @@ public enum SnapshotRunner {
         case confirm
         /// 批量升级的确认面板。
         case batch
+        /// 运行中的面板。**合成状态**，不查网络，专门用来回答一个问题：
+        /// 升级卡住的时候，用户面前到底有没有"取消"这个出口。
+        case running
+        /// 收尾页（成功 + 失败 + 已取消混排）。验证"已取消"没有穿成失败的马甲。
+        case cancelled
     }
 
     private final class Flag {
@@ -33,10 +38,20 @@ public enum SnapshotRunner {
 
         let store = UpdateStore()
         let flag = Flag()
-        Task { @MainActor in
-            await store.check()
-            prepareJob(store: store, mode: mode, flag: flag)
+
+        if let synthetic = syntheticJob(for: mode) {
+            // 合成状态：不查网络、不扫本机应用，渲染结果完全确定。
+            // 这两个截图要能随时重跑并给出同样的结果，而它们的重点本来就是
+            // "用户在卡住时看到什么"，与真实有哪些应用可升级无关。
+            store.job = synthetic
+            flag.jobPrepared = true
             flag.value = true
+        } else {
+            Task { @MainActor in
+                await store.check()
+                prepareJob(store: store, mode: mode, flag: flag)
+                flag.value = true
+            }
         }
 
         let deadline = Date().addingTimeInterval(120)
@@ -52,7 +67,7 @@ public enum SnapshotRunner {
         switch mode {
         case .main:
             root = AnyView(ContentView(store: store))
-        case .confirm, .batch:
+        case .confirm, .batch, .running, .cancelled:
             if flag.jobPrepared {
                 root = AnyView(UpgradeSheet(store: store))
             } else {
@@ -102,7 +117,7 @@ public enum SnapshotRunner {
     /// 造一个升级任务，把面板推到确认态。
     private static func prepareJob(store: UpdateStore, mode: Mode, flag: Flag) {
         switch mode {
-        case .main:
+        case .main, .running, .cancelled:
             break
         case .confirm:
             if let update = store.updates(in: .updateAvailable)
@@ -114,5 +129,108 @@ public enum SnapshotRunner {
             store.requestUpgradeAll()
             flag.jobPrepared = store.job != nil
         }
+    }
+
+    /// 造一个完全确定的升级任务，用来渲染"卡住 / 取消"相关的界面。
+    private static func syntheticJob(for mode: Mode) -> UpgradeJob? {
+        switch mode {
+        case .main, .confirm, .batch:
+            return nil
+
+        case .running:
+            var job = makeSyntheticJob()
+            job.isRunning = true
+            job.currentIndex = 1
+            job.items[0].state = .succeeded
+            job.items[1].state = .running
+            job.phase = Installer.Progress(
+                phase: .replacing,
+                detail: "正在把新包复制到 /Applications… 已用 6 秒"
+            )
+            job.runningLog = """
+            [1/3] Cherry Studio 1.8.4 → 2.0.9
+              ✔ 校验开发者签名
+              ✔ 备份旧版本 → ~/Library/Application Support/AppUpdater/Backups
+              ✔ 退出正在运行的应用
+              ✔ 替换应用 — 新包已就位，正在换名…
+
+            [2/3] IINA 1.3.5 → 1.4.4
+              正在替换应用 — 正在把新包复制到 /Applications… 已用 6 秒
+            """
+            return job
+
+        case .cancelled:
+            var job = makeSyntheticJob()
+            job.isFinished = true
+            job.currentIndex = 1
+            job.items[0].state = .succeeded
+            job.items[1].state = .failed("下载失败：连接超时")
+            job.items[2].state = .skipped("已取消")
+            job.outcomes = [
+                UpgradeJob.Outcome(
+                    id: job.items[0].id,
+                    appName: "Cherry Studio",
+                    fromVersion: "1.8.4",
+                    toVersion: "2.0.9",
+                    succeeded: true,
+                    summary: "已升级到 2.0.9 · Ed25519 签名校验通过",
+                    backupPath: nil,
+                    rolledBack: false,
+                    warnings: [],
+                    log: ""
+                ),
+                UpgradeJob.Outcome(
+                    id: job.items[1].id,
+                    appName: "IINA",
+                    fromVersion: "1.3.5",
+                    toVersion: "1.4.4",
+                    succeeded: false,
+                    summary: "下载失败：连接超时",
+                    backupPath: nil,
+                    rolledBack: false,
+                    warnings: [],
+                    log: ""
+                ),
+                UpgradeJob.Outcome(
+                    id: job.items[2].id,
+                    appName: "Mac Mouse Fix",
+                    fromVersion: "3.0.0",
+                    toVersion: "3.0.1",
+                    succeeded: false,
+                    summary: "已取消，未执行",
+                    backupPath: nil,
+                    rolledBack: false,
+                    warnings: [],
+                    log: "",
+                    cancelled: true
+                )
+            ]
+            return job
+        }
+    }
+
+    /// 三个固定的应用条目。名字取自本机真实会升级的包，截图看起来才像真的。
+    private static func makeSyntheticJob() -> UpgradeJob {
+        let specs: [(name: String, bundleID: String, from: String, to: String)] = [
+            ("Cherry Studio", "com.kangfenmao.CherryStudio", "1.8.4", "2.0.9"),
+            ("IINA", "com.colliderli.iina", "1.3.5", "1.4.4"),
+            ("Mac Mouse Fix", "com.nuebling.mac-mouse-fix", "3.0.0", "3.0.1")
+        ]
+        return UpgradeJob(items: specs.map { spec in
+            let app = AppInfo(
+                name: spec.name,
+                bundleID: spec.bundleID,
+                path: URL(fileURLWithPath: "/Applications/\(spec.name).app"),
+                currentVersion: spec.from,
+                buildVersion: nil,
+                source: .sparkle(feedURL: nil)
+            )
+            return UpgradeJob.Item(
+                app: app,
+                release: ReleaseInfo(version: spec.to),
+                action: .replaceBundle,
+                plan: nil
+            )
+        })
     }
 }
