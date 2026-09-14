@@ -192,6 +192,11 @@ AppUpdater.app/Contents/
 
 不依赖 Xcode 工程文件，`swift build -c release` 即可产出。首次运行因未签名需要右键打开，或 `xattr -d com.apple.quarantine`。
 
+> **2026-09-14 更正**：上面这句里的「右键打开」已失效——Apple 在 macOS 15 (Sequoia) 移除了
+> 这个绕过入口，macOS 26 Tahoe 上同样无效。分发后用户首次打开只有两条路：`xattr -dr com.apple.quarantine`
+> 或「系统设置 → 隐私与安全性 → 仍要打开」（限被拦后约 1 小时内）。原文保留作历史记录，
+> 最新说明见 README 的「安装」一节。
+
 ## 八、v0.2 已实现：一键升级
 
 v0.1 划的边界是"不写入 `/Applications`"。v0.2 跨过了这条线，因此设计上把重心放在

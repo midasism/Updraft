@@ -64,7 +64,22 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 
 ## 安装
 
-### 下载安装包
+### 一行命令（最省事，不用管 Gatekeeper）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/midasism/Updraft/main/scripts/install.sh | sh
+```
+
+自动取最新版 → 校验 SHA-256 → 退出正在运行的旧版本 → 装进 `/Applications` → 打开。指定版本：`curl -fsSL … | VERSION=0.2.1 sh`；想先看一眼脚本再执行，把首尾换成 `… -o /tmp/updraft-install.sh` 和 `sh /tmp/updraft-install.sh` 即可。
+
+> [!TIP]
+> **为什么这条命令不用处理「Apple 无法验证」？**
+>
+> Gatekeeper 只在文件带 `com.apple.quarantine` 属性时才介入，而这个属性是浏览器、邮件、AirDrop 这类经手方通过 LaunchServices 打上的标记。**curl 不经过 LaunchServices，它下载的东西不带这个属性**——于是未公证的 ad-hoc 包也能直接启动。
+>
+> 不买 Developer ID 的话，这就是唯一能做到「装完即开」的免费路径。下面那条 DMG 拖拽路线依然需要用户自己处理 Gatekeeper 弹窗。
+
+### 手动下载（DMG / zip）
 
 从 [Releases](https://github.com/midasism/Updraft/releases/latest) 下载 `Updraft-x.y.z-macOS.dmg`，打开后把图标拖进「应用程序」即可：
 
@@ -75,11 +90,28 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 也可以下载 `Updraft-x.y.z-macOS.zip`，解压后把 `AppUpdater.app` 拖进 `/Applications`——两者内容一致，DMG 只是多了一层拖拽窗口。
 
 > [!IMPORTANT]
-> 安装包只做了临时签名（ad-hoc），**没有走 Apple 公证**。首次打开会提示「无法验证开发者」，右键 →「打开」即可；或先移除隔离属性：
+> 安装包只做了临时签名（ad-hoc），**没有走 Apple 公证**，所以从浏览器下载后首次打开会被 Gatekeeper 拦下，弹「Apple 无法验证…」（只有「完成」和「移到废纸篓」两个按钮）。
+>
+> **先别急着点「移到废纸篓」——包是好的，也不是签名坏了。** arm64 的可执行文件必须有签名才能加载，ad-hoc 是零成本下唯一的选择；被拦只是因为「没公证」这一件事。
+>
+> **macOS 15 (Sequoia) 起，老教程里的「右键 → 打开」已经失效**（Apple 在 Sequoia 移除了这个绕过入口，macOS 26 Tahoe 上同样无效）。现在只有两条路：
+>
+> **① 终端一条命令（最快）**
 >
 > ```bash
 > xattr -dr com.apple.quarantine /Applications/AppUpdater.app
 > ```
+>
+> 之后双击即可打开。（提示权限不足就在前面加 `sudo`。）
+>
+> **② 走系统设置**
+>
+> 先双击一次，让它被拦下——这一步不能省，那个按钮只会因为一次失败的启动而出现。然后打开
+> **系统设置 → 隐私与安全性 → 安全性**，找到「已阻止使用"AppUpdater"…」那一行，点 **仍要打开**，输密码确认。
+>
+> ⚠️ 这个按钮只在被拦后约 1 小时内出现，且没有任何倒计时提示。找不到它就重新双击一次，再回设置页。
+>
+> 不建议为了单个应用关掉整个 Gatekeeper（`spctl --master-disable`）——那是拿全机器的安全换一个应用的方便。
 >
 > 顺手核对一下校验和更稳。把包和 `SHA256SUMS.txt` 下到同一个文件夹后：
 >
@@ -289,10 +321,40 @@ CI 在 `macos-latest` 上跑 `swift build`（Debug + Release）与 `swift test`�
 
 | 脚本 | 产出 |
 |---|---|
-| `scripts/build-app.sh` | `dist/AppUpdater.app`——编译 release、组装 bundle、临时签名 |
+| `scripts/build-app.sh` | `dist/AppUpdater.app`——编译 release、组装 bundle、签名 |
+| `scripts/notarize.sh` | 送上面那个 `.app` 去 Apple 公证并 staple 票据（没配凭据就跳过） |
 | `scripts/build-dmg.sh` | `dist/Updraft-<版本>-macOS.dmg`——调前者出 `.app`，再套一层拖拽安装窗口 |
 
 发布走 tag：推一个 `v*` 标签，[`.github/workflows/release.yml`](.github/workflows/release.yml) 会自动编译、出 DMG 与 zip、算 SHA-256、建 Release。手动触发同一个工作流则只出 Actions Artifacts，不建 Release，用来单独验证流水线。
+
+### 代码签名与公证（可选，但它决定用户的第一印象）
+
+**现状**：默认只做 ad-hoc 签名，产物未公证，用户首次打开会被 Gatekeeper 拦下——绕法见上面的「安装」一节。
+
+**想让用户双击即开，只有 Developer ID + 公证一条路**（需要 Apple Developer Program，$99/年）。免费替代方案基本已被堵死：Homebrew 的 `--no-quarantine` 被移除，官方 tap 自 2026 年 9 月起也不再收未签名未公证的 cask。
+
+流水线已经预留好了，**不需要改任何代码**——`build-app.sh` 与 `notarize.sh` 都是「配了凭据就正式签名 + 公证，没配就退回 ad-hoc」。往仓库加六个 secret，整条链路自动切换；不配则行为与现在完全一致：
+
+| Secret | 内容 | 怎么拿 |
+|---|---|---|
+| `APPLE_CERT_P12` | Developer ID Application 证书的 base64 | 从钥匙串导出 `.p12`，再 `base64 -i cert.p12 \| pbcopy` |
+| `APPLE_CERT_PASSWORD` | 导出 `.p12` 时设的密码 | 导的时候自己定 |
+| `APPLE_CODESIGN_IDENTITY` | `Developer ID Application: 名字 (TEAMID)` | `security find-identity -v -p codesigning` |
+| `APPLE_NOTARY_KEY_ID` | App Store Connect API Key 的 Key ID | App Store Connect → 用户和访问 → 集成 → 密钥 |
+| `APPLE_NOTARY_ISSUER_ID` | Issuer ID | 同一个页面顶部 |
+| `APPLE_NOTARY_KEY_P8` | `.p8` 私钥文件的**内容** | 创建密钥时只能下载一次，先存好 |
+
+两处顺序是硬性的，脚本里已经断言：签名必须带 hardened runtime 与时间戳（公证的前置条件），公证必须发生在出包之前（票据钉在 `.app` 上，dmg 和 zip 才都能带上）。`notarize.sh` 还会在提交前先自检签名，把「证书配错了」这类问题从几分钟的排队之后提前到一秒内报出来。
+
+有证书的机器上要跑全流程：
+
+```bash
+CODESIGN_IDENTITY="Developer ID Application: 名字 (TEAMID)" VERSION=0.3.0 scripts/build-app.sh
+NOTARY_KEY_PATH=~/AuthKey.p8 NOTARY_KEY_ID=xxx NOTARY_ISSUER_ID=yyy scripts/notarize.sh
+VERSION=0.3.0 SKIP_APP_BUILD=1 scripts/build-dmg.sh
+```
+
+注意顺序不能颠倒：`staple` 之后 `.app` 就不能再改了，一改票据就失效。
 
 安装窗口的布局写在 `scripts/dmg-settings.py`，背景图由 `tools/DmgBackground.swift` 生成。**这两处共用一套坐标**（窗口左下角为原点）：窗口左上角那个箭头是画在背景图里的，改图标坐标就必须同步改背景图，否则箭头会和图标错位——没有自动校验，只能靠人盯。
 
