@@ -20,32 +20,32 @@ struct AppRowView: View {
     private var action: InstallAction { update.installAction }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Spacing.sm) {
             icon
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(update.app.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Theme.Fonts.body)
                     .lineLimit(1)
                 HStack(spacing: 5) {
                     Text(update.detailText)
-                        .font(.system(size: 12))
+                        .font(Theme.Fonts.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     if update.result.release?.edSignature != nil, update.app.canVerifySignature {
                         Image(systemName: "checkmark.seal")
                             .font(.system(size: 10))
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Theme.Colors.success)
                             .help("更新源提供 Ed25519 签名，安装前会校验")
                     }
                 }
             }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: Theme.Spacing.sm)
 
             trailing
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 5)
         .contextMenu {
             Button("在访达中显示") { store.reveal(update.app) }
             if let feed = feedURL {
@@ -71,28 +71,28 @@ struct AppRowView: View {
     }
 
     private var icon: some View {
-        RoundedRectangle(cornerRadius: 8)
+        RoundedRectangle(cornerRadius: Theme.Radius.icon, style: .continuous)
             .fill(iconBackground)
-            .frame(width: 32, height: 32)
+            .frame(width: 34, height: 34)
             .overlay(
                 Text(update.app.initial)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(iconForeground)
             )
     }
 
     private var iconBackground: Color {
         switch update.group {
-        case .updateAvailable: return Color.orange.opacity(0.16)
-        case .upToDate: return Color.green.opacity(0.14)
-        case .unsupported: return Color.secondary.opacity(0.12)
+        case .updateAvailable: return Theme.Colors.attention.opacity(0.14)
+        case .upToDate: return Theme.Colors.success.opacity(0.12)
+        case .unsupported: return Color.secondary.opacity(0.10)
         }
     }
 
     private var iconForeground: Color {
         switch update.group {
-        case .updateAvailable: return Color.orange
-        case .upToDate: return Color.green
+        case .updateAvailable: return Theme.Colors.attention
+        case .upToDate: return Theme.Colors.success
         case .unsupported: return Color.secondary
         }
     }
@@ -103,19 +103,19 @@ struct AppRowView: View {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small).scaleEffect(0.8)
                 Text(store.job?.phase?.phase.title ?? "执行中")
-                    .font(.system(size: 11))
+                    .font(Theme.Fonts.note)
                     .foregroundStyle(.secondary)
             }
             .frame(width: 130, alignment: .trailing)
         } else if case .succeeded = finishedState {
             Label("已升级", systemImage: "checkmark.circle.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.green)
+                .font(Theme.Fonts.note)
+                .foregroundStyle(Theme.Colors.success)
                 .labelStyle(.titleAndIcon)
         } else if case .failed(let reason) = finishedState {
             Label(reason, systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 11))
-                .foregroundStyle(.orange)
+                .font(Theme.Fonts.note)
+                .foregroundStyle(Theme.Colors.attention)
                 .lineLimit(1)
                 .frame(maxWidth: 180, alignment: .trailing)
         } else if case .updateAvailable = update.result {
@@ -132,12 +132,13 @@ struct AppRowView: View {
                 Button(action.buttonTitle) {
                     store.openDownload(for: update)
                 }
+                .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(store.job?.isRunning == true)
 
             case .manual:
                 Text("—")
-                    .font(.system(size: 12))
+                    .font(Theme.Fonts.caption)
                     .foregroundStyle(.tertiary)
             }
         }

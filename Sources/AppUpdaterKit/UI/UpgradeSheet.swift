@@ -32,21 +32,21 @@ struct UpgradeSheet: View {
     // MARK: - 顶部
 
     private func header(_ job: UpgradeJob) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(job.title)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(Theme.Fonts.panelTitle)
                 Text(subtitle(job))
-                    .font(.system(size: 12))
+                    .font(Theme.Fonts.caption)
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Theme.Spacing.xs)
             if job.isRunning {
                 ProgressView().controlSize(.small)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.md)
     }
 
     private func subtitle(_ job: UpgradeJob) -> String {
@@ -85,8 +85,8 @@ struct UpgradeSheet: View {
 
     private func singlePlanView(_ plan: Installer.Plan) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: 10) {
                     infoRow("应用", plan.appName)
                     infoRow("标识", plan.bundleID)
                     versionRow(plan)
@@ -104,18 +104,18 @@ struct UpgradeSheet: View {
                 }
 
                 Text("升级过程：下载 → 校验开发者签名 → 备份旧版本 → 退出应用 → 原子替换 → 验证新版本。任何一步失败都会自动回滚到 \(plan.fromVersion ?? "当前版本")。")
-                    .font(.system(size: 11))
+                    .font(Theme.Fonts.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func versionRow(_ plan: Installer.Plan) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
             label("版本")
             HStack(spacing: 6) {
                 Text(plan.fromVersion ?? "未知")
@@ -124,9 +124,10 @@ struct UpgradeSheet: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.tertiary)
                 Text(plan.toVersion)
-                    .fontWeight(.medium)
+                    .fontWeight(.semibold)
                     .foregroundStyle(Color.accentColor)
             }
+            .font(Theme.Fonts.caption)
             Spacer()
         }
     }
@@ -143,10 +144,10 @@ struct UpgradeSheet: View {
 
     private func confirmListView(_ job: UpgradeJob) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 VStack(spacing: 0) {
                     ForEach(Array(job.items.enumerated()), id: \.element.id) { index, item in
-                        if index > 0 { Divider().padding(.leading, 12) }
+                        if index > 0 { Divider().padding(.leading, Theme.Spacing.sm) }
                         HStack(spacing: 10) {
                             Image(systemName: item.action == .replaceBundle ? "arrow.down.circle" : "shippingbox")
                                 .font(.system(size: 12))
@@ -156,20 +157,19 @@ struct UpgradeSheet: View {
                                 Text(item.app.name)
                                     .font(.system(size: 12, weight: .medium))
                                 Text("\(item.app.currentVersion ?? "?") → \(item.release.version)")
-                                    .font(.system(size: 11))
+                                    .font(Theme.Fonts.note)
                                     .foregroundStyle(.secondary)
                             }
-                            Spacer(minLength: 8)
+                            Spacer(minLength: Theme.Spacing.xs)
                             Text(item.action == .replaceBundle ? "校验+替换" : "Homebrew")
-                                .font(.system(size: 11))
+                                .font(Theme.Fonts.note)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, 8)
                     }
                 }
-                .background(Color(nsColor: .controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .cardContainer()
 
                 let unverified = job.items.filter { item in
                     if case .cannotVerify = item.plan?.signature { return true }
@@ -180,12 +180,12 @@ struct UpgradeSheet: View {
                 }
 
                 Text("逐项串行执行，单项失败不会中断其余应用。每个应用升级前都会备份旧版本。")
-                    .font(.system(size: 11))
+                    .font(Theme.Fonts.note)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.md)
         }
     }
 
@@ -197,20 +197,20 @@ struct UpgradeSheet: View {
                 let item = job.items[job.currentIndex]
                 HStack(spacing: 10) {
                     Text(item.app.name)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(Theme.Fonts.body)
                     Text("\(item.app.currentVersion ?? "?") → \(item.release.version)")
-                        .font(.system(size: 12))
+                        .font(Theme.Fonts.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 14)
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.top, Theme.Spacing.md)
                 .padding(.bottom, 10)
 
                 if item.action == .replaceBundle {
                     phaseList(job.phase?.phase)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 12)
+                        .padding(.horizontal, Theme.Spacing.xl)
+                        .padding(.bottom, Theme.Spacing.sm)
                 }
             }
 
@@ -219,17 +219,17 @@ struct UpgradeSheet: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(job.runningLog.isEmpty ? "准备中…" : job.runningLog)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(Theme.Fonts.mono)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
+                        .padding(Theme.Spacing.md)
                         .id("log-tail")
                 }
                 .onChange(of: job.runningLog) { _ in
                     proxy.scrollTo("log-tail", anchor: .bottom)
                 }
             }
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(Theme.Colors.textSurface)
         }
     }
 
@@ -237,13 +237,13 @@ struct UpgradeSheet: View {
         let phases = Installer.Phase.allCases
         let currentIndex = current.flatMap { phases.firstIndex(of: $0) } ?? -1
 
-        return VStack(alignment: .leading, spacing: 5) {
+        return VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(phases.enumerated()), id: \.element) { index, phase in
                 HStack(spacing: 7) {
                     Group {
                         if index < currentIndex {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Theme.Colors.success)
                         } else if index == currentIndex {
                             ProgressView().controlSize(.mini)
                         } else {
@@ -255,7 +255,7 @@ struct UpgradeSheet: View {
                     .frame(width: 14)
 
                     Text(phase.title)
-                        .font(.system(size: 11))
+                        .font(Theme.Fonts.note)
                         .foregroundStyle(index <= currentIndex ? Color.primary : Color.secondary)
                 }
             }
@@ -266,52 +266,52 @@ struct UpgradeSheet: View {
 
     private func resultsView(_ job: UpgradeJob) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 ForEach(job.outcomes) { outcome in
                     outcomeCard(outcome)
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.md)
         }
     }
 
     private func outcomeCard(_ outcome: UpgradeJob.Outcome) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            HStack(spacing: Theme.Spacing.xs) {
                 Image(systemName: symbol(for: outcome))
                     .font(.system(size: 13))
                     .foregroundStyle(tint(for: outcome))
                 Text(outcome.appName)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Theme.Fonts.body)
                 Text("\(outcome.fromVersion ?? "?") → \(outcome.toVersion)")
-                    .font(.system(size: 12))
+                    .font(Theme.Fonts.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
             }
 
             Text(outcome.summary)
-                .font(.system(size: 12))
+                .font(Theme.Fonts.caption)
                 .foregroundStyle(outcome.succeeded ? Color.secondary : tint(for: outcome))
                 .fixedSize(horizontal: false, vertical: true)
 
             if outcome.rolledBack {
                 Text("已回滚到升级前的版本，应用可以正常使用。")
-                    .font(.system(size: 11))
+                    .font(Theme.Fonts.note)
                     .foregroundStyle(.secondary)
             }
 
             ForEach(outcome.warnings, id: \.self) { warning in
                 Text("· \(warning)")
-                    .font(.system(size: 11))
+                    .font(Theme.Fonts.note)
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 14) {
+            HStack(spacing: Theme.Spacing.md) {
                 if let backup = outcome.backupPath {
                     Button("查看备份") { store.revealBackup(backup) }
                         .buttonStyle(.link)
-                        .font(.system(size: 11))
+                        .font(Theme.Fonts.note)
                 }
                 if !outcome.log.isEmpty {
                     DisclosureGroup("执行日志") {
@@ -319,16 +319,15 @@ struct UpgradeSheet: View {
                             .font(.system(size: 10, design: .monospaced))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
+                            .padding(.top, Theme.Spacing.xxs)
                     }
-                    .font(.system(size: 11))
+                    .font(Theme.Fonts.note)
                 }
                 Spacer()
             }
         }
-        .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(Theme.Spacing.sm + 2)
+        .cardContainer()
     }
 
     // MARK: - 底部
@@ -341,7 +340,7 @@ struct UpgradeSheet: View {
 
     private func tint(for outcome: UpgradeJob.Outcome) -> Color {
         if outcome.cancelled { return .secondary }
-        return outcome.succeeded ? .green : .orange
+        return outcome.succeeded ? Theme.Colors.success : Theme.Colors.attention
     }
 
     @ViewBuilder
@@ -350,11 +349,11 @@ struct UpgradeSheet: View {
             if job.isFinished {
                 if job.failedCount > 0 {
                     Text("有 \(job.failedCount) 项未完成，可查看上方原因后重试")
-                        .font(.system(size: 11))
+                        .font(Theme.Fonts.note)
                         .foregroundStyle(.secondary)
                 } else if job.cancelledCount > 0 {
                     Text("已取消 \(job.cancelledCount) 项，剩下的不会再动手")
-                        .font(.system(size: 11))
+                        .font(Theme.Fonts.note)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -366,7 +365,7 @@ struct UpgradeSheet: View {
                 Text(job.cancelRequested
                      ? "已请求取消，当前应用完成后即停止…"
                      : (job.phase?.detail ?? "执行中…"))
-                    .font(.system(size: 11))
+                    .font(Theme.Fonts.note)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
@@ -386,24 +385,24 @@ struct UpgradeSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.sm + 2)
     }
 
     // MARK: - 小组件
 
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(Theme.Fonts.caption)
             .foregroundStyle(.secondary)
-            .frame(width: 68, alignment: .leading)
+            .frame(width: 76, alignment: .leading)
     }
 
     private func infoRow(_ title: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.xs) {
             label(title)
             Text(value)
-                .font(.system(size: 12))
+                .font(Theme.Fonts.caption)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -411,24 +410,24 @@ struct UpgradeSheet: View {
     }
 
     private func warningBox(_ warnings: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
             ForEach(warnings, id: \.self) { warning in
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Theme.Colors.attention)
                         .padding(.top, 2)
                     Text(warning)
-                        .font(.system(size: 11))
+                        .font(Theme.Fonts.note)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .padding(10)
+        .padding(Theme.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .background(Theme.Colors.attentionWash)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.small + 2, style: .continuous))
     }
 
     private func abbreviate(_ url: URL) -> String {
