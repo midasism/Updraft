@@ -8,6 +8,7 @@ on:
       - 'Tests/**'
       - 'Package.swift'
       - 'scripts/**'
+      - 'tools/**'
       - '.github/workflows/ci.yml'
       - '.github/workflows/release.yml'
   pull_request:
@@ -17,6 +18,7 @@ on:
       - 'Tests/**'
       - 'Package.swift'
       - 'scripts/**'
+      - 'tools/**'
       - '.github/workflows/ci.yml'
       - '.github/workflows/release.yml'
   workflow_dispatch:

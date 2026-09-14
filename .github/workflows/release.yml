@@ -37,6 +37,7 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "zip=Updraft-${VERSION}-macOS.zip" >> "$GITHUB_OUTPUT"
+          echo "dmg=Updraft-${VERSION}-macOS.dmg" >> "$GITHUB_OUTPUT"
           echo "→ 版本 $VERSION"
 
       - name: 编译并组装 .app
@@ -45,14 +46,22 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
         run: scripts/build-app.sh
 
-      - name: 打包 zip
+      # DMG 需要 hdiutil（macOS 独有）和 dmgbuild，后者由脚本自己装进 .build/ 下的虚拟环境
+      - name: 生成 DMG 安装镜像
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          SKIP_APP_BUILD: '1'
+        run: scripts/build-dmg.sh
+
+      - name: 压 zip 并生成校验和
         env:
           ZIP: ${{ steps.meta.outputs.zip }}
+          DMG: ${{ steps.meta.outputs.dmg }}
         run: |
           # 必须是 ditto：zip -r 会丢掉 .app 内部的符号链接与权限位，解压后包是坏的
           ditto -c -k --sequesterRsrc --keepParent dist/AppUpdater.app "$ZIP"
-          shasum -a 256 "$ZIP" > SHA256SUMS.txt
-          ls -lh "$ZIP"
+          shasum -a 256 "$ZIP" "dist/$DMG" > SHA256SUMS.txt
+          ls -lh "$ZIP" "dist/$DMG"
           cat SHA256SUMS.txt
 
       # 每次运行都留一份可直接下载的构建产物（Actions 页面底部 Artifacts）
@@ -61,6 +70,7 @@ jobs:
           name: Updraft-${{ steps.meta.outputs.version }}
           path: |
             ${{ steps.meta.outputs.zip }}
+            dist/${{ steps.meta.outputs.dmg }}
             SHA256SUMS.txt
           retention-days: 90
 
@@ -70,9 +80,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
           ZIP: ${{ steps.meta.outputs.zip }}
+          DMG: ${{ steps.meta.outputs.dmg }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            "$ZIP" SHA256SUMS.txt \
+            "$ZIP" "dist/$DMG" SHA256SUMS.txt \
             --title "Updraft v$VERSION" \
             --generate-notes \
             --verify-tag
