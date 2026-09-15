@@ -106,11 +106,6 @@ public final class UpdateStore: ObservableObject {
     public var upToDateCount: Int { updates(in: .upToDate).count }
     public var unsupportedCount: Int { updates(in: .unsupported).count }
 
-    /// 能由本工具自己走完安装的条目数，决定「全部升级」按钮是否出现。
-    public var automatedUpdateCount: Int {
-        Self.automatedCandidates(in: updates).count
-    }
-
     public var lastCheckedText: String {
         guard let lastChecked else { return "尚未检查" }
         let elapsed = Date().timeIntervalSince(lastChecked)
