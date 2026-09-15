@@ -27,6 +27,15 @@ final class SchedulingTests: XCTestCase {
         XCTAssertFalse(planner.isDue(schedule: schedule, lastSatisfied: lastChecked, lastTriggered: nil, now: now))
     }
 
+    func testNotDueBeforeTodayScheduleWhenYesterdayWasCheckedEarly() {
+        let lastChecked = date(2026, 9, 14, 8, 0)
+        let now = date(2026, 9, 15, 8, 0)
+        XCTAssertFalse(
+            planner.isDue(schedule: schedule, lastSatisfied: lastChecked, lastTriggered: nil, now: now),
+            "昨天已经手动检查过，今天计划时刻前不应把昨天的 occurrence 当成漏查"
+        )
+    }
+
     func testDueBeforeTodayScheduleWhenPreviousDayWasMissed() {
         // 周一整天睡过去，周二 08:00（今天 10:00 尚未到）醒来，也要补周一 10:00 那次。
         let lastChecked = date(2026, 9, 13, 20, 0)

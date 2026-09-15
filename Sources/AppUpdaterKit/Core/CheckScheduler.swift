@@ -37,6 +37,11 @@ public struct CheckPlanner: Sendable {
         return calendar.isDate(date, inSameDayAs: other)
     }
 
+    private func isPreviousDay(_ date: Date, as other: Date) -> Bool {
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: date) else { return false }
+        return calendar.isDate(tomorrow, inSameDayAs: other)
+    }
+
     /// 核心判定：`now` 时刻是否该触发一次定时检查。
     ///
     /// 先守「同一天内不重复」；再找 `now` 之前最近一个计划时刻：今天尚未到点时取昨天，
@@ -51,6 +56,14 @@ public struct CheckPlanner: Sendable {
         guard schedule.isEnabled else { return false }
         guard !isSameDay(lastSatisfied, as: now), !isSameDay(lastTriggered, as: now) else { return false }
         guard let occurrence = latestOccurrence(onOrBefore: now, schedule: schedule) else { return false }
+        // 今天时刻尚未到、且昨天已经手动/启动检查过时，不把「昨天 10:00」误判成
+        // 一次漏查的 occurrence；同一天内的任意检查都满足当天的去重承诺。
+        if let lastSatisfied,
+           isPreviousDay(lastSatisfied, as: now),
+           let today = scheduledDate(on: now, schedule: schedule),
+           now < today {
+            return false
+        }
         if let lastSatisfied, lastSatisfied >= occurrence { return false }
         if let lastTriggered, lastTriggered >= occurrence { return false }
         return true
