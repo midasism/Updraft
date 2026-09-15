@@ -70,6 +70,22 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(AppSettings(defaults: defaults).scheduledCheckMinute, 0)
     }
 
+    func testStringTypedValuesAreAccepted() {
+        // `defaults` 命令行会把数字写成字符串存进 suite（真机实测 `defaults write dom key 7`
+        // 读回来是 NSTaggedPointerString "7"）。只认 NSNumber 的话这类值会静默回退默认值，
+        // 表现成「重启后设置不生效」。两类都得收。
+        let defaults = freshDefaults()
+        defaults.set("14", forKey: "check.schedule.hour")
+        defaults.set("30", forKey: "check.schedule.minute")
+        defaults.set("false", forKey: "check.schedule.enabled")
+        defaults.set("true", forKey: "notifications.enabled")
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertEqual(settings.scheduledCheckHour, 14)
+        XCTAssertEqual(settings.scheduledCheckMinute, 30)
+        XCTAssertFalse(settings.scheduledCheckEnabled)
+        XCTAssertTrue(settings.notificationsEnabled)
+    }
+
     func testScheduleText() {
         let settings = AppSettings(defaults: freshDefaults())
         XCTAssertEqual(settings.scheduleText, "定时检查：每天 10:00")

@@ -157,62 +157,78 @@ final class SchedulingTests: XCTestCase {
         super.tearDown()
     }
 
+    /// tick 触发的 fire 走 `Task {}` 异步派发；让主执行者空转两拍，把排队的 fire 跑完再断言。
+    /// 测试与 fire 闭包都在主执行者上，FIFO，两拍足够确定性。
+    private func drainMainActor() async {
+        await Task.yield()
+        await Task.yield()
+    }
+
     @MainActor
-    func testTickBeforeTimeDoesNotFire() {
+    func testTickBeforeTimeDoesNotFire() async {
         let fired = FireLog()
         let watcher = makeWatcher(lastChecked: nil, planner: planner, settings: makeSettings(enabled: true), fired: fired)
         watcher.tick(now: date(2026, 9, 15, 9, 0))
         watcher.tick(now: date(2026, 9, 15, 9, 59))
+        await drainMainActor()
         XCTAssertEqual(fired.count, 0)
     }
 
     @MainActor
-    func testTickFiresOncePerDay() {
+    func testTickFiresOncePerDay() async {
         let fired = FireLog()
         let watcher = makeWatcher(lastChecked: nil, planner: planner, settings: makeSettings(enabled: true), fired: fired)
         // 到点触发一次；之后一整天反复轮询（模拟 30 秒一拍）都不能再触发。
         watcher.tick(now: date(2026, 9, 15, 10, 0))
+        await drainMainActor()
         for minute in 1...60 {
             watcher.tick(now: date(2026, 9, 15, 10, minute))
         }
         watcher.tick(now: date(2026, 9, 15, 23, 59))
+        await drainMainActor()
         XCTAssertEqual(fired.count, 1, "同一天内不得重复触发")
     }
 
     @MainActor
-    func testTickFiresAgainNextDay() {
+    func testTickFiresAgainNextDay() async {
         let fired = FireLog()
         let watcher = makeWatcher(lastChecked: nil, planner: planner, settings: makeSettings(enabled: true), fired: fired)
         watcher.tick(now: date(2026, 9, 15, 10, 0))
+        await drainMainActor()
         watcher.tick(now: date(2026, 9, 16, 9, 59))
+        await drainMainActor()
         XCTAssertEqual(fired.count, 1)
         watcher.tick(now: date(2026, 9, 16, 10, 0))
+        await drainMainActor()
         XCTAssertEqual(fired.count, 2, "第二天到点要重新触发")
     }
 
     @MainActor
-    func testTickSkipsWhenAlreadyCheckedToday() {
+    func testTickSkipsWhenAlreadyCheckedToday() async {
         let fired = FireLog()
         // 缓存里今天 8 点查过——到点不该再查。
         let watcher = makeWatcher(lastChecked: date(2026, 9, 15, 8, 0), planner: planner, settings: makeSettings(enabled: true), fired: fired)
         watcher.tick(now: date(2026, 9, 15, 10, 0))
+        await drainMainActor()
         XCTAssertEqual(fired.count, 0)
     }
 
     @MainActor
-    func testTickCatchUpAfterMissedSlot() {
+    func testTickCatchUpAfterMissedSlot() async {
         let fired = FireLog()
         // 昨天查过；今天 10 点在睡眠中错过，20 点唤醒——第一次轮询就该补查。
         let watcher = makeWatcher(lastChecked: date(2026, 9, 14, 23, 0), planner: planner, settings: makeSettings(enabled: true), fired: fired)
         watcher.tick(now: date(2026, 9, 15, 20, 0))
+        await drainMainActor()
         XCTAssertEqual(fired.count, 1)
     }
 
     @MainActor
-    func testTickDoesNotFireWhenDisabled() {
+    func testTickDoesNotFireWhenDisabled() async {
         let fired = FireLog()
         let watcher = makeWatcher(lastChecked: nil, planner: planner, settings: makeSettings(enabled: false), fired: fired)
         watcher.tick(now: date(2026, 9, 15, 12, 0))
+        await drainMainActor()
         XCTAssertEqual(fired.count, 0)
     }
 

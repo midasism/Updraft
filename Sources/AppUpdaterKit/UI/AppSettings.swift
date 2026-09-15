@@ -46,13 +46,35 @@ public final class AppSettings: ObservableObject {
         let store = defaults ?? UserDefaults(suiteName: Self.suiteName)
         self.defaults = store ?? .standard
 
-        // 读取时钳制：手改 plist 写出界（hour=25 之类）不该让调度器拿到非法时刻。
-        scheduledCheckEnabled = store?.object(forKey: Key.scheduledEnabled) as? Bool ?? true
-        scheduledCheckHour = (store?.object(forKey: Key.scheduledHour) as? Int)
-            .map { min(max($0, 0), 23) } ?? Self.defaultHour
-        scheduledCheckMinute = (store?.object(forKey: Key.scheduledMinute) as? Int)
-            .map { min(max($0, 0), 59) } ?? Self.defaultMinute
-        notificationsEnabled = store?.object(forKey: Key.notificationsEnabled) as? Bool ?? true
+        scheduledCheckEnabled = Self.boolValue(in: store, key: Key.scheduledEnabled) ?? true
+        scheduledCheckHour = min(max(Self.intValue(in: store, key: Key.scheduledHour) ?? Self.defaultHour, 0), 23)
+        scheduledCheckMinute = min(max(Self.intValue(in: store, key: Key.scheduledMinute) ?? Self.defaultMinute, 0), 59)
+        notificationsEnabled = Self.boolValue(in: store, key: Key.notificationsEnabled) ?? true
+    }
+
+    // MARK: - 值解析
+
+    /// suite 里的值不一定是我们自己写进去的：`defaults` 命令行与手改 plist 都可能把数字
+    /// 存成字符串（实测 `defaults write dom key 7` 读回来是 NSTaggedPointerString "7"，
+    /// `as? Int` 直接落空、静默回退默认值）。两类都收，越界在上一层钳制。
+    private static func intValue(in store: UserDefaults?, key: String) -> Int? {
+        guard let value = store?.object(forKey: key) else { return nil }
+        if let number = value as? NSNumber { return number.intValue }
+        if let text = value as? String { return Int(text) }
+        return nil
+    }
+
+    private static func boolValue(in store: UserDefaults?, key: String) -> Bool? {
+        guard let value = store?.object(forKey: key) else { return nil }
+        if let number = value as? NSNumber { return number.boolValue }
+        if let text = value as? String {
+            switch text.lowercased() {
+            case "true", "yes", "1": return true
+            case "false", "no", "0": return false
+            default: return nil
+            }
+        }
+        return nil
     }
 
     /// 给调度器用的快照。
