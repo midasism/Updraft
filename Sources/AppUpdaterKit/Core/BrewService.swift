@@ -27,6 +27,58 @@ public struct BrewCaskIndex: Sendable {
     }
 }
 
+/// Homebrew 索引读到什么程度。界面与 CLI 的提示文案都从这里取，
+/// 保证两处说的是同一句话，不会各自发挥。
+public enum BrewIndexStatus: Sendable, Equatable {
+    /// 全部读取成功。
+    case ok
+    /// 本机没有可用的 brew 可执行文件。
+    case brewNotFound
+    /// `brew list --cask` 失败，Homebrew 本身出了问题，cask 体系整体不可用。
+    case listFailed(stderr: String)
+    /// 批量读取失败后降级成逐个查询，部分 cask 仍然读不了（例如 tap 不受信任、
+    /// cask 定义损坏）。其余索引不受影响，`index` 依旧可用。
+    case partial(skipped: [String], stderr: String)
+
+    /// 给界面看的一句话说明；一切正常时为 `nil`。
+    public var notice: String? {
+        switch self {
+        case .ok:
+            return nil
+        case .brewNotFound:
+            return "未找到 Homebrew"
+        case .listFailed(let stderr):
+            return "Homebrew 索引读取失败" + (Self.failureSuffix(stderr) ?? "")
+        case .partial(let skipped, let stderr):
+            guard !skipped.isEmpty else { return "Homebrew 索引读取失败" + (Self.failureSuffix(stderr) ?? "") }
+            let shown = skipped.prefix(3).joined(separator: "、")
+            let more = skipped.count > 3 ? " 等 \(skipped.count) 个" : ""
+            return "\(shown)\(more) 无法读取，已跳过"
+        }
+    }
+
+    /// stderr 的第一行非空内容。brew 的报错就藏在里面，界面上至少要露出这一行。
+    private static func failureSuffix(_ stderr: String) -> String? {
+        let line = stderr
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        return line.map { "：\($0)" }
+    }
+}
+
+/// 索引读取的结果。`index` 为 `nil` 表示整个 cask 体系不可用；
+/// 不为 `nil` 时即便有被跳过的 cask，读到的部分依然可信。
+public struct BrewIndexOutcome: Sendable {
+    public let index: BrewCaskIndex?
+    public let status: BrewIndexStatus
+
+    public init(index: BrewCaskIndex?, status: BrewIndexStatus) {
+        self.index = index
+        self.status = status
+    }
+}
+
 /// 封装所有 `brew` 调用。GUI 进程的 PATH 通常不含 Homebrew，因此所有调用都显式带上补齐后的环境变量。
 public enum BrewService {
     public static func brewPath() -> String? {
@@ -48,11 +100,24 @@ public enum BrewService {
     // MARK: - 索引
 
     /// 一次性读出所有已安装 cask 及其 .app 产物，供分类器建立映射。
-    public static func loadIndex() async -> BrewCaskIndex? {
-        guard let brew = brewPath() else { return nil }
+    ///
+    /// 批量 `brew info` 是原子性的：只要有一个 cask 加载失败（tap 不受信任、
+    /// cask 定义损坏都很常见），整批就以非零退出、不输出任何 JSON。所以批量失败
+    /// 时降级为逐个查询——坏的那几个跳过，其余的索引必须保住。
+    /// 一个无关的坏 cask 不该让整个 Homebrew 功能瘫痪。
+    public static func loadIndex() async -> BrewIndexOutcome {
+        guard let brew = brewPath() else {
+            return BrewIndexOutcome(index: nil, status: .brewNotFound)
+        }
 
-        let listResult = await ProcessRunner.run(executable: brew, arguments: ["list", "--cask"])
-        guard listResult.exitCode == 0 else { return nil }
+        let listResult = await ProcessRunner.run(
+            executable: brew,
+            arguments: ["list", "--cask"],
+            environment: environment()
+        )
+        guard listResult.exitCode == 0 else {
+            return BrewIndexOutcome(index: nil, status: .listFailed(stderr: listResult.stderr))
+        }
 
         let tokens = listResult.stdout
             .split(separator: "\n")
@@ -60,24 +125,18 @@ public enum BrewService {
             .filter { !$0.isEmpty }
 
         guard !tokens.isEmpty else {
-            return BrewCaskIndex(appNameToToken: [:], installedTokens: [], binaryOnlyTokens: [:])
+            return BrewIndexOutcome(
+                index: BrewCaskIndex(appNameToToken: [:], installedTokens: [], binaryOnlyTokens: [:]),
+                status: .ok
+            )
         }
 
-        let infoResult = await ProcessRunner.run(
-            executable: brew,
-            arguments: ["info", "--cask", "--json=v2"] + tokens
-        )
-        guard infoResult.exitCode == 0,
-              let data = infoResult.stdout.data(using: .utf8),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let casks = root["casks"] as? [[String: Any]] else {
-            return nil
-        }
+        let info = await loadCaskInfo(brew: brew, tokens: tokens)
 
         var appNameToToken: [String: String] = [:]
         var binaryOnly: [String: String] = [:]
 
-        for cask in casks {
+        for cask in info.casks {
             guard let token = cask["token"] as? String else { continue }
             let installedVersion = normalizedVersion(cask["installed"])
 
@@ -101,11 +160,81 @@ public enum BrewService {
             }
         }
 
-        return BrewCaskIndex(
+        let index = BrewCaskIndex(
             appNameToToken: appNameToToken,
             installedTokens: tokens,
             binaryOnlyTokens: binaryOnly
         )
+
+        // 有跳过项时索引要如实反映：跳过的 token 仍在 installedTokens 里（确实装了），
+        // 但调用方需要知道这部分没查到详情，而不是当成"没有"。
+        let status: BrewIndexStatus
+        if info.skipped.isEmpty {
+            status = .ok
+        } else {
+            status = .partial(skipped: info.skipped, stderr: info.stderr)
+        }
+        return BrewIndexOutcome(index: index, status: status)
+    }
+
+    private struct CaskInfoBatch {
+        var casks: [[String: Any]] = []
+        var skipped: [String] = []
+        var stderr: String = ""
+    }
+
+    /// 先整批查；批量失败（哪怕只有一个坏 cask）再逐个查，坏的记入 `skipped`。
+    private static func loadCaskInfo(brew: String, tokens: [String]) async -> CaskInfoBatch {
+        let batchResult = await ProcessRunner.run(
+            executable: brew,
+            arguments: ["info", "--cask", "--json=v2"] + tokens,
+            environment: environment()
+        )
+
+        if batchResult.exitCode == 0,
+           let casks = parseCaskInfo(batchResult.stdout) {
+            return CaskInfoBatch(casks: casks)
+        }
+
+        var batch = CaskInfoBatch()
+        batch.stderr = batchResult.stderr
+        // 逐个查询的并发别开太大：每次都是一个完整的 brew 进程，冷启动要几百毫秒。
+        for chunk in tokens.chunked(into: 4) {
+            await withTaskGroup(of: (String, [[String: Any]]?, String).self) { group in
+                for token in chunk {
+                    group.addTask {
+                        let result = await ProcessRunner.run(
+                            executable: brew,
+                            arguments: ["info", "--cask", "--json=v2", token],
+                            environment: environment()
+                        )
+                        if result.exitCode == 0, let parsed = parseCaskInfo(result.stdout), !parsed.isEmpty {
+                            return (token, parsed, "")
+                        }
+                        return (token, nil, result.stderr)
+                    }
+                }
+                for await (token, parsed, stderr) in group {
+                    if let parsed {
+                        batch.casks.append(contentsOf: parsed)
+                    } else {
+                        batch.skipped.append(token)
+                        if batch.stderr.isEmpty { batch.stderr = stderr }
+                    }
+                }
+            }
+        }
+        return batch
+    }
+
+    /// `brew info --json=v2` 的 stdout → cask 数组。解析失败返回 `nil`。
+    static func parseCaskInfo(_ stdout: String) -> [[String: Any]]? {
+        guard let data = stdout.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let casks = root["casks"] as? [[String: Any]] else {
+            return nil
+        }
+        return casks
     }
 
     // MARK: - 检测
@@ -131,7 +260,11 @@ public enum BrewService {
         var arguments = ["outdated", "--cask", "--greedy", "--json=v2"]
         if let tokens { arguments.append(contentsOf: tokens) }
 
-        let result = await ProcessRunner.run(executable: brew, arguments: arguments)
+        let result = await ProcessRunner.run(
+            executable: brew,
+            arguments: arguments,
+            environment: environment()
+        )
         guard result.exitCode == 0,
               let data = result.stdout.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
