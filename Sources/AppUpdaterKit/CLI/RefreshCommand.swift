@@ -69,7 +69,12 @@ public enum RefreshCommand {
         print(String(format: "本次重新读包并探测 %d 个，耗时 %.2f 秒", report.refreshed.count, elapsed))
 
         let merged = IncrementalChecker.merge(report.all, into: cached)
-        cache.save(.init(updates: merged, savedAt: Date(), lastFullCheckAt: snapshot.lastFullCheckAt))
+        cache.save(.init(
+            updates: merged,
+            savedAt: Date(),
+            lastFullCheckAt: snapshot.lastFullCheckAt,
+            lastFullCheckStartedAt: snapshot.lastFullCheckStartedAt
+        ))
         print("→ 已并回缓存（\(merged.count) 项），未涉及的条目保持不变")
         return 0
     }

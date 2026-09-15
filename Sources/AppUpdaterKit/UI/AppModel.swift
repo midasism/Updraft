@@ -55,6 +55,10 @@ public final class AppModel: ObservableObject {
         NotificationRouter.shared.openApp = { [weak self] route in
             self?.openMainWindow(route: route)
         }
+        AppDelegate.shared?.canTerminate = { [weak store, weak self] in
+            guard let self else { return true }
+            return store?.job?.isRunning != true && !self.store.isInstallingSelf
+        }
 
         // 调度器必须跟应用生命周期走，不能绑在主窗口 onAppear 上——关掉窗口后下次
         // 启动若窗口未被恢复，定时检查就会哑火。didFinishLaunching 时再 start，幂等。
@@ -94,7 +98,7 @@ public final class AppModel: ObservableObject {
     /// 菜单栏「立即检查」：与主窗口「重新检查」同一条路径（store.check → CheckEngine），
     /// 差别只在收尾——窗口看不见时用系统通知把结果递出去。
     func checkNowFromMenuBar() {
-        guard !store.isBusy else { return }
+        guard !store.isCheckBlocked else { return }
         Task { await runCheck() }
     }
 
@@ -191,8 +195,9 @@ public final class AppModel: ObservableObject {
     func menuBarStatus() -> MenuBarStatus {
         MenuBarStatus(
             isChecking: store.isChecking,
+            isInstalling: store.job?.isRunning == true || store.isInstallingSelf,
             updateCount: store.updateCount,
-            hasResult: !store.updates.isEmpty,
+            hasResult: store.lastChecked != nil,
             lastCheckedText: store.lastCheckedText,
             scheduleText: settings.scheduleText
         )

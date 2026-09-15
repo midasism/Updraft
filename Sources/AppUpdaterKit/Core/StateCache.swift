@@ -6,16 +6,27 @@ public struct StateCache: Sendable {
         public let updates: [AppUpdate]
         /// 这份快照的写入时间。增量刷新也会更新它，因此它**不等于**"上次全量检查"。
         public let savedAt: Date
-        /// 上一次**全量**检查的时间。
+        /// 上一次**全量**检查完成的时间，用于界面展示。
         ///
         /// 增量刷新只重查了少数几个条目，其余条目仍然是全量那一刻的结论；
         /// 拿 `savedAt` 去当"上次检查"对着没查过的应用撒谎。
         public let lastFullCheckAt: Date?
+        /// 上一次全量检查**开始**的时间，用于每日去重。
+        ///
+        /// 不能拿完成时间代替：23:59 开始、00:01 结束的检查应满足前一天的计划，
+        /// 不能因此把第二天 23:59 的检查也压掉。
+        public let lastFullCheckStartedAt: Date?
 
-        public init(updates: [AppUpdate], savedAt: Date, lastFullCheckAt: Date? = nil) {
+        public init(
+            updates: [AppUpdate],
+            savedAt: Date,
+            lastFullCheckAt: Date? = nil,
+            lastFullCheckStartedAt: Date? = nil
+        ) {
             self.updates = updates
             self.savedAt = savedAt
             self.lastFullCheckAt = lastFullCheckAt
+            self.lastFullCheckStartedAt = lastFullCheckStartedAt
         }
     }
 

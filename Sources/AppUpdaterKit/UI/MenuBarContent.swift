@@ -4,6 +4,7 @@ import SwiftUI
 /// 菜单栏下拉的状态快照（值类型，截图通道可注入合成数据）。
 struct MenuBarStatus: Equatable {
     var isChecking = false
+    var isInstalling = false
     var updateCount = 0
     var hasResult = false
     var lastCheckedText = "尚未检查"
@@ -30,12 +31,18 @@ struct MenuBarContent: View {
             Text(status.scheduleText)
         }
         Divider()
-        Button(status.isChecking ? "正在检查…" : "立即检查") { actions.checkNow() }
-            .disabled(status.isChecking)
+        Button(checkTitle) { actions.checkNow() }
+            .disabled(status.isChecking || status.isInstalling)
         Button("打开主窗口") { actions.openMain() }
         Button("设置…") { actions.openSettings() }
         Divider()
         Button("退出 Updraft") { actions.quit() }
+            .disabled(status.isInstalling)
+    }
+
+    private var checkTitle: String {
+        if status.isInstalling { return "安装中，暂不检查" }
+        return status.isChecking ? "正在检查…" : "立即检查"
     }
 
     private var headline: String {

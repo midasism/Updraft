@@ -78,7 +78,10 @@ struct MenuBarExtraRoot: View {
                     model.capture(openWindow: openWindow)
                     model.openSettings()
                 },
-                quit: { NSApp.terminate(nil) }
+                quit: {
+                    guard !model.store.isInstallingSelf, model.store.job?.isRunning != true else { return }
+                    NSApp.terminate(nil)
+                }
             )
         )
     }
@@ -97,6 +100,18 @@ struct MainWindowRoot: View {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    static weak var shared: AppDelegate?
+    var canTerminate: (() -> Bool)?
+
+    override init() {
+        super.init()
+        Self.shared = self
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        canTerminate?() == false ? .terminateCancel : .terminateNow
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 以 SwiftPM 直接跑可执行文件时没有 bundle，需要手动把进程提升为前台应用。
         NSApp.setActivationPolicy(.regular)

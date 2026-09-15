@@ -16,15 +16,11 @@ public struct CheckSchedule: Equatable, Sendable {
 /// 「现在该不该触发一次定时检查」的判定逻辑。
 ///
 /// 纯函数、日历可注入：所有规则都能用合成日期断言，测试不需要真等时间。
-/// 三条规则缺一不可：
-///   1. 开关关着永远不触发；
-///   2. 当天的计划时刻还没到不触发（到了、或已经错过——合盖/关机睡过去了——都算该补）；
-///   3. 今天已经查过（手动或定时，看 `lastChecked`）或调度器自己已经触发过（看
-///      `lastTriggered`，防检查在跑期间重复开火）就不再触发。
+/// 默认使用 `autoupdatingCurrent`：菜单栏进程长期不退出，用户跨时区后必须立刻按新本地时间算。
 public struct CheckPlanner: Sendable {
     public var calendar: Calendar
 
-    public init(calendar: Calendar = .current) {
+    public init(calendar: Calendar = .autoupdatingCurrent) {
         self.calendar = calendar
     }
 
@@ -43,17 +39,30 @@ public struct CheckPlanner: Sendable {
 
     /// 核心判定：`now` 时刻是否该触发一次定时检查。
     ///
-    /// 「错过时段的补查」不是一条单独的规则——时刻已过且今天没查过，本身就是该查，
-    /// 唤醒后第一次轮询自然接住它（验收要求恢复后 5 分钟内，实际是立即）。
+    /// 先守「同一天内不重复」；再找 `now` 之前最近一个计划时刻：今天尚未到点时取昨天，
+    /// 今天已到点时取今天。只要这个 occurrence 比上次满足计划的检查开始时刻/本次触发新，就该补查。
+    /// 因此周一睡过 10:00、周二 08:00 才唤醒，也会立即补周一那次，不会拖到周二 10:00。
     public func isDue(
         schedule: CheckSchedule,
-        lastChecked: Date?,
+        lastSatisfied: Date?,
         lastTriggered: Date?,
         now: Date
     ) -> Bool {
         guard schedule.isEnabled else { return false }
-        guard let dueAt = scheduledDate(on: now, schedule: schedule), now >= dueAt else { return false }
-        return !isSameDay(lastChecked, as: now) && !isSameDay(lastTriggered, as: now)
+        guard !isSameDay(lastSatisfied, as: now), !isSameDay(lastTriggered, as: now) else { return false }
+        guard let occurrence = latestOccurrence(onOrBefore: now, schedule: schedule) else { return false }
+        if let lastSatisfied, lastSatisfied >= occurrence { return false }
+        if let lastTriggered, lastTriggered >= occurrence { return false }
+        return true
+    }
+
+    /// `now` 之前（含当前）的最近一个计划时刻。
+    private func latestOccurrence(onOrBefore now: Date, schedule: CheckSchedule) -> Date? {
+        if let today = scheduledDate(on: now, schedule: schedule), today <= now {
+            return today
+        }
+        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: now) else { return nil }
+        return scheduledDate(on: yesterday, schedule: schedule)
     }
 
     /// 下一次计划时刻。`now` 在今天时刻之前返回今天，否则返回明天。

@@ -75,7 +75,7 @@ public struct ContentView: View {
                 }
                 .frame(minWidth: 68)
             }
-            .disabled(store.isBusy || store.job?.isRunning == true)
+            .disabled(store.isCheckBlocked)
 
             if let openSettings {
                 Button {
