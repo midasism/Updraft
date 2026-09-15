@@ -108,7 +108,7 @@ public final class UpdateStore: ObservableObject {
 
     /// 能由本工具自己走完安装的条目数，决定「全部升级」按钮是否出现。
     public var automatedUpdateCount: Int {
-        updates(in: .updateAvailable).filter { $0.installAction.isAutomated }.count
+        Self.automatedCandidates(in: updates).count
     }
 
     public var lastCheckedText: String {
@@ -275,14 +275,28 @@ public final class UpdateStore: ObservableObject {
         job = UpgradeJob(items: [item])
     }
 
-    /// 全部升级：把所有能自动完成的条目合成一个任务，顺序执行。
-    public func requestUpgradeAll() {
+    /// 全部升级：把能自动完成的条目合成一个任务，顺序执行。
+    ///
+    /// - Parameter visible: 界面当前筛出来的那批。传 nil 表示没有筛选，对全量生效。
+    ///   搜索框有词时必须传它——否则用户筛出 1 个再点「升级这 1 个」，
+    ///   结果升的是全量二十几个，而他一个都没看见。
+    public func requestUpgradeAll(visible: [AppUpdate]? = nil) {
         guard job?.isRunning != true else { return }
-        let items = updates(in: .updateAvailable)
-            .compactMap { makeItem(from: $0) }
-            .filter(\.isAutomated)
-        guard !items.isEmpty else { return }
-        job = UpgradeJob(items: items)
+        let candidates = Self.automatedCandidates(in: visible ?? updates)
+        guard !candidates.isEmpty else { return }
+        job = UpgradeJob(items: candidates.compactMap { makeItem(from: $0) })
+    }
+
+    /// 从一批条目里挑出本工具能自己走完安装的那些。
+    ///
+    /// 抽成静态纯函数是为了能被断言：`updates` 是 `private(set)`，且填充它要跑真实
+    /// 扫描，测试里造不出来。而「只升传进来的这批」恰恰是最需要守住的边界，
+    /// 不能只靠读代码相信。
+    ///
+    /// `candidates` 已经全部是 `.updateAvailable`（`installAction` 只在这种情况下
+    /// 才不是 `.manual`），所以 `makeItem` 不会在这里丢掉任何一条。
+    public static func automatedCandidates(in updates: [AppUpdate]) -> [AppUpdate] {
+        updates.filter { $0.installAction.isAutomated }
     }
 
     private func makeItem(from update: AppUpdate) -> UpgradeJob.Item? {
