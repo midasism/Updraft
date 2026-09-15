@@ -421,16 +421,19 @@ Expected: 4 行 `✔` + `全部通过`。这一步确认「哪些条目算可自
 
 修改 `Sources/AppUpdaterKit/UI/UpdateStore.swift`。
 
-**(a) 删掉 `automatedUpdateCount`（第 109-112 行）**——它将被 `automatedCandidates(in:)` 取代，留着就是同一件事的第二个定义：
+**(a) 把 `automatedUpdateCount`（第 109-112 行）改成复用 `automatedCandidates`**：
 
 ```swift
     /// 能由本工具自己走完安装的条目数，决定「全部升级」按钮是否出现。
     public var automatedUpdateCount: Int {
-        updates(in: .updateAvailable).filter { $0.installAction.isAutomated }.count
+        Self.automatedCandidates(in: updates).count
     }
 ```
 
-删掉整段。调用点只有 `ContentView.swift:60`，Task 3 会一并改掉。
+> **2026-09-15 修订**：原文让这一步直接删掉 `automatedUpdateCount`，但那样会让 `ContentView.swift:60` 断链，
+> **Task 2 的提交就成了一个编译不过的提交**。改成先让它复用 `automatedCandidates`（顺手消掉「可自动完成」
+> 这件事的第二处定义），构建保持绿；等 Task 3 把 `ContentView` 切到 `automatedCandidates(in: filteredUpdates)`
+> 之后，它才真正没人用，**在 Task 3 里删**。
 
 **(b) 替换 `requestUpgradeAll`（第 278-286 行）**：
 
@@ -469,7 +472,8 @@ cd /Users/midasgao/code/github_project/midasism-Updraft
 swift build --disable-sandbox
 ```
 
-Expected: `Build complete!` —— 注意这一步会先在 `ContentView.swift:60` 报 `automatedUpdateCount` 找不到，**这是预期的**，Task 3 修。若想先绿再加 Task 3，可临时把该行改成 `store.automatedCandidates...`；但按顺序做完 Task 3 更省事。
+Expected: `Build complete!` —— 因为 Step 3(a) 保留了 `automatedUpdateCount`（改成复用 `automatedCandidates`），
+调用点 `ContentView.swift:60` 不会断链，**这个提交是绿的**。它要等 Task 3 才删。
 
 ### Step 5: 写 XCTest 用例（CI 跑）
 
@@ -611,6 +615,20 @@ public struct ContentView: View {
                 .disabled(store.isBusy)
             }
 ```
+
+**(b) 顺手删掉 `UpdateStore.automatedUpdateCount`**（Task 2 保留它只是为了让那一步的提交是绿的）：
+
+本步骤把 `ContentView` 切到 `visibleAutomatedCount` 之后，`automatedUpdateCount` 就没人调用了。
+删掉 `Sources/AppUpdaterKit/UI/UpdateStore.swift` 里这一段（Task 2 改成复用 `automatedCandidates` 的那个属性）：
+
+```swift
+    /// 能由本工具自己走完安装的条目数，决定「全部升级」按钮是否出现。
+    public var automatedUpdateCount: Int {
+        Self.automatedCandidates(in: updates).count
+    }
+```
+
+Task 3 的提交因此要多带一个文件（见 Step 8）。删之前先 `grep -rn automatedUpdateCount Sources Tests` 确认真的归零。
 
 在 `Spacer(minLength: 12)`（第 50 行）之后插入：
 
@@ -801,9 +819,11 @@ Expected: `/tmp/search-check.png`（1760×1320）——检查四件事：
 ### Step 8: 提交
 
 ```bash
-git add Sources/AppUpdaterKit/UI/ContentView.swift
+git add Sources/AppUpdaterKit/UI/ContentView.swift Sources/AppUpdaterKit/UI/UpdateStore.swift
 git commit -m "feat(search): 主窗口搜索框，实时过滤列表并收窄批量升级范围"
 ```
+
+（`UpdateStore.swift` 是 Step 3(b) 删 `automatedUpdateCount` 那一处。）
 
 ---
 
