@@ -825,6 +825,31 @@ git commit -m "feat(search): 主窗口搜索框，实时过滤列表并收窄批
 
 （`UpdateStore.swift` 是 Step 3(b) 删 `automatedUpdateCount` 那一处。）
 
+### Task 2 实施记录（2026-09-15 实际落地时的偏差）
+
+实现提交 `935e050`，随后按审查意见补了一个修复提交 `7552e45`。三处与计划不同，都是计划写漏的：
+
+1. **`automatedCandidates` 必须标 `nonisolated`**（计划里没有）。
+   `UpdateStore` 是 `@MainActor`，它的 `static` 方法默认也跟着 MainActor 隔离。而 XCTest 的用例方法
+   是非 MainActor 的同步上下文，直接调它会**编译报错**：
+   `call to main actor-isolated static method in a synchronous nonisolated context`。
+   本机跑不了 `swift test`，这个错会一直藏到 CI 才炸。这函数只碰入参、不读 actor 状态，标 `nonisolated`
+   本来就是准确的；顺带让 `InstallCommand` 也能不带 `await` 复用它。
+   > 验证手段：`swift build` 后用 `.build/debug/Modules` + `.build/debug/AppUpdaterKit.build/*.o`
+   > 把一个非 MainActor 的驱动编到**真实模块**上去跑——这条路不需要 Xcode。
+
+2. **守卫改判 `compactMap` 之后的结果**（计划里判的是它之前的 `candidates`）。两者当前等价，但判前者
+   能挡住将来的脆弱点：若谁给 `InstallAction` 加一个 `isAutomated == true` 却生成不出 `item` 的情形，
+   旧写法会**静默建出一个空的升级面板**，而且没有任何断言拦得住。
+
+3. **`InstallCommand.runAll` 的重复谓词一并收掉**（计划外，DRY）。
+   原先是 `context.updates.filter { $0.group == .updateAvailable && $0.installAction.isAutomated }`，
+   与 `automatedCandidates` 是同一件事的第二处定义。已实证两者结果逐条一致
+   （穷举 36 种 source × result 组合），改后行为不变。
+
+**Step 2 的「4 行 ✔」不够**：实际还补跑了新旧筛选等价性的三前提验证（`isAutomated` 蕴含 `.updateAvailable`、
+新老筛选逐条一致、`makeItem` 不丢条目），36 种组合全过。这两组断言值得保留在 `/tmp` 里直到 CI 绿。
+
 ---
 
 ## Task 4: 截图通道支持 `--query`
