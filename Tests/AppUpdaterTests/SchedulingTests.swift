@@ -136,13 +136,18 @@ final class SchedulingTests: XCTestCase {
     ) -> UpdateWatcher {
         let cache = StateCache(fileURL: FileManager.default.temporaryDirectory
             .appendingPathComponent("watcher-\(UUID().uuidString).json"))
-        if let lastChecked {
-            cache.save(.init(updates: [], savedAt: lastChecked, lastFullCheckAt: lastChecked))
+        if let lastSatisfied {
+            cache.save(.init(
+                updates: [],
+                savedAt: lastSatisfied,
+                lastFullCheckAt: lastSatisfied,
+                lastFullCheckStartedAt: lastSatisfied
+            ))
         }
         // fire 被替换成记账闭包，store 的引擎永远不会被调用——这里只测「什么时候触发」。
         let store = UpdateStore(engine: CheckEngine(), cache: cache)
         XCTAssertEqual(store.lastChecked.map { calendar.startOfDay(for: $0) },
-                       lastChecked.map { calendar.startOfDay(for: $0) },
+                       lastSatisfied.map { calendar.startOfDay(for: $0) },
                        "前置条件：缓存里的 lastFullCheckAt 要能变成 store.lastChecked")
         return UpdateWatcher(store: store, settings: settings, planner: planner, fire: {
             fired.record(Date.distantPast) // 记账用的固定值，断言次数而不是时刻
