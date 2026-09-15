@@ -824,9 +824,13 @@ public struct Installer: Sendable {
     }
 
     static func launch(_ app: URL) async -> Bool {
-        await MainActor.run {
-            NSWorkspace.shared.open(app)
-        }
+        // CLI 入口用信号量堵住了主线程，`MainActor.run { NSWorkspace.open }` 会自锁。
+        // `/usr/bin/open` 不依赖 AppKit 主线程，GUI / CLI 都能把新实例拉起来。
+        let result = await ProcessRunner.run(
+            executable: "/usr/bin/open",
+            arguments: [app.path]
+        )
+        return result.succeeded
     }
 
     // MARK: - 文件系统小工具

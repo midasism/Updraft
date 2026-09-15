@@ -9,15 +9,14 @@ func value(after flag: String) -> String? {
 }
 
 func runAndWait(_ operation: @escaping () async -> Int32) -> Never {
-    // main.swift 的顶层代码不能直接 await，用信号量把结果等出来再退出。
-    let done = DispatchSemaphore(value: 0)
-    var code: Int32 = 0
+    // 不能用信号量堵主线程：安装路径里有 MainActor 工作（AppKit / 拉起新实例），
+    // 主线程一堵就会自锁。跑 RunLoop，让协作式调度能回到主线程。
     Task {
-        code = await operation()
-        done.signal()
+        let code = await operation()
+        exit(code)
     }
-    done.wait()
-    exit(code)
+    RunLoop.main.run()
+    fatalError("unreachable")
 }
 
 // 无界面自检：跑一遍完整检测并打印结果。
