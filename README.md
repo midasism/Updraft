@@ -43,6 +43,7 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 
 ## 功能
 
+- 🔄 **自己也能升自己** — 查 GitHub Releases、校验清单 Ed25519 与 zip SHA-256、原子换包后自动打开新版本。入口在菜单「检查 Updraft 更新…」，不混进主应用列表。
 - 🔍 **一个窗口看全** — 三档分组（可更新 / 已是最新 / 无法自动检测）+ 三个统计卡片，一次扫完 `/Applications` 与 `~/Applications`。
 - ⚡ **真能一键升完** — 不是“打开下载页让你自己点”：下载 → 验签 → 备份 → 原子换包 → 重新打开，全自动。单个升级和批量升级都走同一条链路。
 - 🔐 **三道身份校验** — Ed25519 签名验证整个安装包，再叠 `codesign --verify --deep --strict` 与签名主体一致性。任何一道不过就地中止，磁盘上什么都没变。
@@ -150,6 +151,8 @@ VERSION=0.3.0 scripts/build-dmg.sh     # 出 dist/Updraft-0.3.0-macOS.dmg
 AU="dist/AppUpdater.app/Contents/MacOS/AppUpdater"
 
 $AU --check                  # 打印完整检测结果
+$AU --self-check             # 检查本工具自己有没有新版本
+$AU --self-install           # 下载、验签、替换自己（装在 /Applications 时）
 $AU --plan-all               # 列出所有可自动升级的条目及预检详情（不下载）
 $AU --install-all            # 升级全部可自动完成的条目
 $AU --recover                # 清理上一次被中断的安装残留
@@ -166,6 +169,8 @@ $AU --recover                # 清理上一次被中断的安装残留
 | `--install "<名字>"` / `--install-all` | 真实执行升级（命令行自己的编排） |
 | `--job "<名字>"` | 真实执行升级，但走界面状态源那条路径（含升级收尾的增量刷新） |
 | `--recover` | 清理上一次被中断的安装残留 |
+| `--self-check` | 检查本工具自己的 GitHub Release |
+| `--self-install` | 对本工具执行下载 → 验签 → 自替换 |
 | `--snapshot <路径> [--mode main / confirm / batch]` | 导出界面截图 |
 
 `--refresh` 读的是 GUI 写下的检查结果缓存，所以先跑一次 `--check`（或打开窗口）让它有东西可刷。
@@ -245,6 +250,24 @@ EdDSA 签名校验 ──── 不通过就地中止，磁盘上什么都没变
 
 所有会在磁盘上留下痕迹的操作都排在备份与换包之后，**绝大多数失败不会在磁盘上留下任何痕迹**。
 
+### 本工具自己怎么更新
+
+主列表是「本机的其他应用」，Updraft 自己不混进去。菜单「检查 Updraft 更新…」和 `--self-check` / `--self-install` 走另一条同源链路：
+
+```
+GitHub Releases API（/repos/midasism/Updraft/releases/latest）
+    ↓
+tag 与 CFBundleShortVersionString 比对（三态：有更新 / 已是最新 / 检查失败）
+    ↓
+下载 zip → 验签 update.json（Ed25519）→ 对照 sha256 → 解包 → codesign
+    ↓
+备份旧包 → 把自己 rename 成 .old → 新包就位 → 拉起新实例
+    ↓
+新实例启动时按中断自愈逻辑清掉 .old
+```
+
+验签同样是三态：缺公钥或缺清单标「未校验」，签名对不上或校验和不符必须中止、磁盘零残留。Release 流水线在出 SHA256SUMS.txt 之后签 `update.json`；没配 `UPDRAFT_ED25519_PRIVATE_KEY` 时跳过签名、流水线不挂。
+
 ### 三道独立的身份校验
 
 任一条不过就中止：
@@ -309,7 +332,7 @@ Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但
 
 ```bash
 swift build --disable-sandbox      # 编译
-swift test  --disable-sandbox      # 114 个单元测试
+swift test  --disable-sandbox      # 单元测试
 ```
 
 > [!WARNING]
@@ -343,6 +366,7 @@ CI 在 `macos-latest` 上跑 `swift build`（Debug + Release）与 `swift test`�
 | `APPLE_NOTARY_KEY_ID` | App Store Connect API Key 的 Key ID | App Store Connect → 用户和访问 → 集成 → 密钥 |
 | `APPLE_NOTARY_ISSUER_ID` | Issuer ID | 同一个页面顶部 |
 | `APPLE_NOTARY_KEY_P8` | `.p8` 私钥文件的**内容** | 创建密钥时只能下载一次，先存好 |
+| `UPDRAFT_ED25519_PRIVATE_KEY` | 自更新清单的 Ed25519 私钥（32 字节 raw 的 base64） | 与 `SelfUpdateIdentity.publicEDKey` 成对；没配则跳过签名，客户端标「未校验」 |
 
 两处顺序是硬性的，脚本里已经断言：签名必须带 hardened runtime 与时间戳（公证的前置条件），公证必须发生在出包之前（票据钉在 `.app` 上，dmg 和 zip 才都能带上）。`notarize.sh` 还会在提交前先自检签名，把「证书配错了」这类问题从几分钟的排队之后提前到一秒内报出来。
 
@@ -368,11 +392,12 @@ Sources/AppUpdaterKit/
   Core/        扫描、分类、版本比对、进程执行、缓存、检查编排
                UpdateProbing（探针协议）/ IncrementalChecker（增量刷新与合并）
                SignatureVerifier / PackageDownloader / BackupStore / Installer
+               SelfUpdateIdentity / SelfUpdateChecker / SelfUpdateManifest（本工具自更新）
   Probes/      Sparkle 与 Electron 两套探针 + appcast 解析
   UI/          SwiftUI 界面 + 状态源
-  CLI/         --check / --refresh / --job / --plan / --install / --recover / --snapshot
+  CLI/         --check / --refresh / --job / --plan / --install / --recover / --self-check / --self-install / --snapshot
 Sources/AppUpdater/main.swift   可执行入口
-Tests/AppUpdaterTests/          114 个单元测试
+Tests/AppUpdaterTests/          单元测试
 ```
 
 分层的关键约束：**检测逻辑不认识 UI，UI 不认识网络**。
@@ -391,6 +416,7 @@ Tests/AppUpdaterTests/          114 个单元测试
 - **纯逻辑单测** — 版本比对（边界：相等、递增整数 vs 点分、空值、后缀）、appcast XML 解析、`app-update.yml` 解析，用真实抓取的 XML 片段做 fixture。
 - **扫描器测试** — 对临时构造的伪 `.app` 目录树断言分类结果。
 - **探针测试** — 注入 stub HTTP 客户端，覆盖 200 / 404 / 超时 / 畸形 XML 四条路径。
+- **自更新** — GitHub Releases 三态与 404 / 403 / 超时 / 畸形 JSON；清单 Ed25519 通过 / 篡改 zip / 换公钥必须失败；缺公钥或缺清单标「未校验」；换包中断后 `.AppUpdater.*.old.app` 自愈。
 - **重点回归** — appcast 增量补丁 7 条、签名校验 6 条（真实 Ed25519 密钥对签名通过、篡改一个字节必须失败、换公钥必须失败、缺公钥判“跳过”而非失败）、中断恢复 10 条。
 - **端到端** — 在真机上对真实应用做完整替换。dmg 路径实测 Rectangle `0.86 → 1.100`，zip 路径实测 KeyCastr `0.10.3 → 0.11.1`，升级后 `codesign --verify --deep --strict` 均通过，`/Applications` 无残留、无遗留挂载。
 
@@ -398,8 +424,9 @@ Tests/AppUpdaterTests/          114 个单元测试
 
 ## 路线
 
-- **v0.3** — 每日定时后台检查 + 系统通知；菜单栏图标。
-- **v0.4** — 接入 App Store 应用；针对 Chrome 私有更新接口、JetBrains Toolbox 等做专门适配。
+- **v0.3** — 本工具自更新（GitHub Releases 检测 + Ed25519 验签 + 自替换）。
+- **v0.4** — 每日定时后台检查 + 系统通知；菜单栏图标。
+- **v0.5** — 接入 App Store 应用；针对 Chrome 私有更新接口、JetBrains Toolbox 等做专门适配。
 - **长期** — 支持 Sparkle 增量补丁（`spk!` 格式），大应用（IINA 104 MB、Cherry Studio 372 MB）升级可以少下载很多。
 
 ## 生态

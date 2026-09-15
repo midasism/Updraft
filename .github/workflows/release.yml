@@ -118,6 +118,43 @@ jobs:
           ls -lh
           cat SHA256SUMS.txt
 
+      # 签名更新清单。没配私钥时脚本自己跳过（exit 0），客户端会标「未校验」而不是把流水线弄挂。
+      - name: 签名自更新清单（未配置私钥则跳过）
+        env:
+          UPDRAFT_ED25519_PRIVATE_KEY: ${{ secrets.UPDRAFT_ED25519_PRIVATE_KEY }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+        run: |
+          SHA="$(awk -v zip="$ZIP" '$2 == zip { print $1 }' artifacts/SHA256SUMS.txt)"
+          if [ -z "$SHA" ]; then
+            echo "✘ 在 SHA256SUMS.txt 里找不到 $ZIP" >&2
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v${VERSION}"
+          fi
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ZIP}"
+          swift scripts/sign-update-manifest.swift \
+            --version "$VERSION" \
+            --name "$ZIP" \
+            --sha256 "$SHA" \
+            --url "$URL" \
+            --output-dir artifacts
+          ls -lh artifacts
+          echo "──── update.json ────"
+          cat artifacts/update.json
+          if [ -f artifacts/update.json.sig ]; then
+            echo "──── update.json.sig ────"
+            cat artifacts/update.json.sig
+            echo
+            echo "✔ 清单已签名，将随 Release 发布"
+          else
+            echo "⚠︎ 未生成 update.json.sig（未配置 UPDRAFT_ED25519_PRIVATE_KEY）"
+            echo "  客户端安装时将标「未校验」而非失败"
+          fi
+
       # 每次运行都留一份可直接下载的构建产物（Actions 页面底部 Artifacts）
       - uses: actions/upload-artifact@v4
         with:

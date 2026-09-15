@@ -39,6 +39,14 @@ public final class UpdateStore: ObservableObject {
     /// 上次运行被中断留下的残留被处理过，需要让用户知道。
     @Published public private(set) var recoveryNotice: String?
 
+    /// 本工具自更新。不混进主应用列表，单独一条状态。
+    @Published public private(set) var selfStatus: SelfUpdateStatus?
+    @Published public private(set) var isCheckingSelf = false
+    @Published public var isSelfUpdatePresented = false
+    @Published public private(set) var selfInstallProgress: Installer.Progress?
+    @Published public private(set) var selfInstallReport: Installer.Report?
+    @Published public private(set) var isInstallingSelf = false
+
     private let cache: StateCache
     /// 检查引擎。全量扫描与增量刷新共用同一个——两条路径都不该有第二套探测逻辑。
     private let engine: CheckEngine
@@ -63,7 +71,7 @@ public final class UpdateStore: ObservableObject {
         self.cache = cache
 
         if let snapshot = cache.load() {
-            updates = snapshot.updates
+            updates = SelfUpdateIdentity.excludingSelf(snapshot.updates)
             // 增量刷新会把 savedAt 推到现在，但只有部分条目真的被重查过；
             // 所以"上次检查"取全量时间，取不到（旧版缓存）才退回 savedAt。
             lastFullCheckAt = snapshot.lastFullCheckAt ?? snapshot.savedAt
@@ -110,6 +118,7 @@ public final class UpdateStore: ObservableObject {
 
     public func checkIfNeeded() async {
         runStartupRecovery()
+        Task { await checkSelfUpdate() }
         if updates.isEmpty { await check() }
     }
 
@@ -146,7 +155,7 @@ public final class UpdateStore: ObservableObject {
         statusMessage = "正在扫描应用…"
         let scanned = await Task.detached { AppScanner().scan() }.value
         let classifier = AppClassifier(caskIndex: index)
-        var apps = scanned.map { classifier.classify($0) }
+        var apps = SelfUpdateIdentity.excludingSelf(scanned.map { classifier.classify($0) })
 
         // 纯命令行 cask（如 ngrok）没有 .app 包，扫描不到，单独补成一条。
         if let index {
@@ -460,5 +469,91 @@ public final class UpdateStore: ObservableObject {
     public func openReleaseNotes(_ update: AppUpdate) {
         guard let url = update.result.release?.releaseNotesURL else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    // MARK: - 本工具自更新
+
+    /// 查 GitHub Releases。失败只记在 `selfStatus` 里，不影响主列表。
+    public func checkSelfUpdate() async {
+        guard !isCheckingSelf, !isInstallingSelf else { return }
+        isCheckingSelf = true
+        let status = await SelfUpdateChecker().check()
+        selfStatus = status
+        isCheckingSelf = false
+    }
+
+    public func presentSelfUpdate() {
+        isSelfUpdatePresented = true
+        selfInstallProgress = nil
+        selfInstallReport = nil
+        if selfStatus == nil, !isCheckingSelf {
+            Task { await checkSelfUpdate() }
+        }
+    }
+
+    public func dismissSelfUpdate() {
+        guard !isInstallingSelf else { return }
+        isSelfUpdatePresented = false
+    }
+
+    /// 下载 → 验签 → 换自己 → 拉起新实例。成功后由界面退出当前进程。
+    public func installSelfUpdate() async {
+        guard !isInstallingSelf else { return }
+        guard case .updateAvailable(let release) = selfStatus else { return }
+        guard let target = SelfUpdateIdentity.installTargetURL(), AppUpdate.isReplaceable(target) else {
+            selfInstallReport = failureReport("找不到可替换的 AppUpdater.app（需要装在 /Applications 或 ~/Applications）")
+            return
+        }
+
+        isInstallingSelf = true
+        selfInstallProgress = nil
+        selfInstallReport = nil
+
+        let current = SelfUpdateIdentity.currentShortVersion
+            ?? Installer.plistValue("CFBundleShortVersionString", in: target)
+        let app = SelfUpdateIdentity.makeAppInfo(at: target, version: current)
+        let report = await installer.install(
+            app: app,
+            release: release.releaseInfo,
+            options: .selfUpdate(
+                manifestBytes: release.manifestBytes,
+                manifestSignature: release.manifestSignature,
+                publicKey: SelfUpdateIdentity.publicEDKey
+            )
+        ) { [weak self] progress in
+            Task { @MainActor [weak self] in
+                self?.selfInstallProgress = progress
+            }
+        }
+
+        selfInstallReport = report
+        isInstallingSelf = false
+
+        if report.succeeded {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    public func selfUpdatePlan() -> Installer.Plan? {
+        guard case .updateAvailable(let release) = selfStatus,
+              let target = SelfUpdateIdentity.installTargetURL() else { return nil }
+        let current = SelfUpdateIdentity.currentShortVersion
+            ?? Installer.plistValue("CFBundleShortVersionString", in: target)
+        let app = SelfUpdateIdentity.makeAppInfo(at: target, version: current)
+        return installer.makePlan(app: app, release: release.releaseInfo)
+    }
+
+    private func failureReport(_ reason: String) -> Installer.Report {
+        var report = Installer.Report(
+            appName: SelfUpdateIdentity.displayName,
+            bundleID: SelfUpdateIdentity.bundleID,
+            fromVersion: SelfUpdateIdentity.currentShortVersion,
+            toVersion: selfStatus?.release?.version ?? "",
+            signature: .skipped(reason: "尚未校验")
+        )
+        report.error = reason
+        return report
     }
 }

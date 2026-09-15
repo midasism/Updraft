@@ -22,6 +22,18 @@ VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 DIST="$ROOT/dist"
 APP="$DIST/$APP_NAME.app"
+# 与 Sources/AppUpdaterKit/Core/SelfUpdateIdentity.swift 的 publicEDKey 同源，改一处即可。
+SU_PUBLIC_ED_KEY="$(python3 - <<'PY'
+import re, pathlib
+text = pathlib.Path("Sources/AppUpdaterKit/Core/SelfUpdateIdentity.swift").read_text()
+m = re.search(r'public static let publicEDKey = "([^"]+)"', text)
+print(m.group(1) if m else "")
+PY
+)"
+if [ -z "$SU_PUBLIC_ED_KEY" ]; then
+  echo "✘ 读不到 SelfUpdateIdentity.publicEDKey" >&2
+  exit 1
+fi
 
 echo "→ 编译 release 版本…"
 # SwiftPM 的 manifest 编译会自己再套一层 sandbox，在受限环境里会失败，所以显式关掉。
@@ -70,6 +82,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>SUPublicEDKey</key>
+    <string>$SU_PUBLIC_ED_KEY</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>

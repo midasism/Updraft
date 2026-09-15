@@ -64,6 +64,15 @@ if arguments.contains("--recover") {
     exit(InstallCommand.recover())
 }
 
+// 本工具自更新：与 GUI 同源，不走主应用列表。
+if arguments.contains("--self-check") {
+    runAndWait { await SelfUpdateCommand.check() }
+}
+
+if arguments.contains("--self-install") {
+    runAndWait { await SelfUpdateCommand.install() }
+}
+
 // 界面截图：把真实的视图渲染成 PNG，用于验证排版。
 if let index = arguments.firstIndex(of: "--snapshot") {
     let path = index + 1 < arguments.count ? arguments[index + 1] : "app-snapshot.png"
