@@ -19,6 +19,11 @@ public enum SnapshotRunner {
         case running
         /// 收尾页（成功 + 失败 + 已取消混排）。验证"已取消"没有穿成失败的马甲。
         case cancelled
+        /// 菜单栏下拉内容。**合成状态**：菜单栏要在「不打开主窗口也能看状态」的场景下留痕，
+        /// 而菜单内容是值类型快照（MenuBarStatus），合成即确定。
+        case menubar
+        /// 设置窗口。**合成状态**（临时 suite 的设置对象），不持久化、不触发授权。
+        case settings
     }
 
     private final class Flag {
@@ -34,7 +39,12 @@ public enum SnapshotRunner {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
-        let canvas = size ?? (mode == .main ? NSSize(width: 880, height: 660) : NSSize(width: 600, height: 540))
+        let canvas = size ?? defaultCanvas(for: mode)
+
+        // 菜单栏与设置是纯合成视图，不走检查流程，渲染结果完全确定。
+        if let syntheticRoot = syntheticRoot(for: mode) {
+            return render(syntheticRoot, canvas: canvas, outputPath: outputPath)
+        }
 
         let store = UpdateStore()
         let flag = Flag()
@@ -74,8 +84,25 @@ public enum SnapshotRunner {
                 FileHandle.standardError.write(Data("没有找到可自动升级的条目，退回主窗口截图\n".utf8))
                 root = AnyView(ContentView(store: store))
             }
+        case .menubar, .settings:
+            // 上面 syntheticRoot 已接住，不会走到这里。
+            root = AnyView(EmptyView())
         }
 
+        return render(root, canvas: canvas, outputPath: outputPath)
+    }
+
+    private static func defaultCanvas(for mode: Mode) -> NSSize {
+        switch mode {
+        case .main: NSSize(width: 880, height: 660)
+        case .menubar: NSSize(width: 300, height: 330)
+        case .settings: NSSize(width: 460, height: 320)
+        default: NSSize(width: 600, height: 540)
+        }
+    }
+
+    /// 合成视图通道：渲染 + 写 PNG。与真实检查通道共用同一段绘制代码。
+    private static func render(_ root: AnyView, canvas: NSSize, outputPath: String) -> Int32 {
         let hosting = NSHostingView(rootView: root)
         hosting.frame = NSRect(origin: .zero, size: canvas)
 
@@ -114,10 +141,41 @@ public enum SnapshotRunner {
         return 0
     }
 
+    /// 菜单栏与设置的合成视图：状态与动作全是编好的值，重跑必然得到同一张图。
+    private static func syntheticRoot(for mode: Mode) -> AnyView? {
+        switch mode {
+        case .menubar:
+            // 名字取自本机真实会升级的包，截图看起来才像真的（与 makeSyntheticJob 同一理由）。
+            let status = MenuBarStatus(
+                isChecking: false,
+                updateCount: 3,
+                hasResult: true,
+                lastCheckedText: "5 分钟前检查",
+                scheduleText: "定时检查：每天 10:00"
+            )
+            let actions = MenuBarContent.Actions(
+                checkNow: {},
+                openMain: {},
+                openSettings: {},
+                quit: {}
+            )
+            return AnyView(MenuBarContent(status: status, actions: actions))
+        case .settings:
+            let defaults = UserDefaults(suiteName: "updraft-snapshot-settings")
+            let settings = AppSettings(defaults: defaults)
+            settings.scheduledCheckEnabled = true
+            settings.scheduledCheckHour = 10
+            settings.scheduledCheckMinute = 0
+            return AnyView(SettingsView(settings: settings))
+        case .main, .confirm, .batch, .running, .cancelled:
+            return nil
+        }
+    }
+
     /// 造一个升级任务，把面板推到确认态。
     private static func prepareJob(store: UpdateStore, mode: Mode, flag: Flag) {
         switch mode {
-        case .main, .running, .cancelled:
+        case .main, .running, .cancelled, .menubar, .settings:
             break
         case .confirm:
             if let update = store.updates(in: .updateAvailable)
@@ -134,7 +192,7 @@ public enum SnapshotRunner {
     /// 造一个完全确定的升级任务，用来渲染"卡住 / 取消"相关的界面。
     private static func syntheticJob(for mode: Mode) -> UpgradeJob? {
         switch mode {
-        case .main, .confirm, .batch:
+        case .main, .confirm, .batch, .menubar, .settings:
             return nil
 
         case .running:

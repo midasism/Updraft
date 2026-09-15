@@ -50,6 +50,8 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 - ↩️ **失败自动回滚** — 换包用同卷 `rename` 而非“删除 + 拷贝”，旧版本一直在盘上，回滚只是一次改名。
 - 🧹 **中断能自愈** — 强制退出或断电留下的中间态文件，下次启动自动收拾；最坏情况（旧包已挪走、新包未就位）会把旧包搬回去。
 - 🕵️ **拿不准就说拿不准** — feed 读不出来就标“不支持”，版本比对拿不到权威值就标“检查失败”，**绝不猜一个版本号糊弄你**。
+- 📌 **菜单栏常驻** — 图标旁的数字就是待更新数；下拉里看上次检查时间，「立即检查」不开窗口也能跑，跑的还是同一个引擎。
+- ⏰ **每日定时检查 + 系统通知** — 到点在后台自动查（错过时段恢复后补一次，当天查过不重复），有更新弹系统通知、点按直达主窗口；权限被拒就安静闭嘴，状态照旧在菜单栏上。
 - 🖥️ **GUI 之外还有 CLI** — 检查、预演、执行、恢复、导出界面截图都有对应命令，方便脚本化与排查。
 
 ## 截图
@@ -166,7 +168,7 @@ $AU --recover                # 清理上一次被中断的安装残留
 | `--install "<名字>"` / `--install-all` | 真实执行升级（命令行自己的编排） |
 | `--job "<名字>"` | 真实执行升级，但走界面状态源那条路径（含升级收尾的增量刷新） |
 | `--recover` | 清理上一次被中断的安装残留 |
-| `--snapshot <路径> [--mode main / confirm / batch]` | 导出界面截图 |
+| `--snapshot <路径> [--mode …]` | 导出界面截图（`main / confirm / batch / running / cancelled / menubar / settings`） |
 
 `--refresh` 读的是 GUI 写下的检查结果缓存，所以先跑一次 `--check`（或打开窗口）让它有东西可刷。
 
@@ -177,6 +179,20 @@ NSUnbufferedIO=YES nohup "$AU" --job "IINA" >/tmp/updraft.log 2>&1 &
 ```
 
 （`NSUnbufferedIO=YES` 是必需的：Swift 的 `print` 在 stdout 不是 TTY 时是块缓冲的，进程被强杀会丢掉整个缓冲区，日志一片空白。）
+
+### 后台盯着：菜单栏、定时检查与通知
+
+关掉主窗口应用仍在运行（⌘Q 才退出），菜单栏图标常驻：
+
+- **图标旁的数字**是待更新数，没有更新时只剩一个环形箭头；
+- 下拉里能看到上次检查时间与定时计划，「立即检查」不开窗口就能跑——与主窗口「重新检查」是同一个引擎（`CheckEngine`），结果逐字一致；
+- **每日定时检查**（设置里可开关、可改时刻，默认每天 10:00）：到点在后台跑全量检查；合盖、关机错过的时段，唤醒/启动后补查一次；**当天查过（不管手动还是自动）就不重复**；
+- **系统通知**：后台检查发现可更新应用时弹出，点按打开主窗口。你在主窗口里看到的检查结果不会再弹通知（看着结果还弹是打扰）；通知权限被系统拒掉后安静跳过，状态照旧能从菜单栏看到。
+
+设置从三个入口到达：主窗口右上角齿轮、菜单栏「设置…」、⌘,。持久化在 UserDefaults 固定 suite（`com.local.appupdater`），裸跑可执行文件与 `.app` 包读到的是同一份。
+
+> [!NOTE]
+> 系统通知依赖 UserNotifications，需要进程有 bundle identifier——`dist/AppUpdater.app` 没问题；`swift run` 直接裸跑可执行文件时通知整体退化为 no-op（一碰 UNUserNotificationCenter 就会崩，代码里按 bundle 探测跳过了），菜单栏与定时检查不受影响。
 
 ## 工作原理
 
@@ -309,7 +325,7 @@ Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但
 
 ```bash
 swift build --disable-sandbox      # 编译
-swift test  --disable-sandbox      # 114 个单元测试
+swift test  --disable-sandbox      # 130+ 个单元测试
 ```
 
 > [!WARNING]
@@ -368,14 +384,17 @@ Sources/AppUpdaterKit/
   Core/        扫描、分类、版本比对、进程执行、缓存、检查编排
                UpdateProbing（探针协议）/ IncrementalChecker（增量刷新与合并）
                SignatureVerifier / PackageDownloader / BackupStore / Installer
+               CheckScheduler（定时检查的纯判定：CheckSchedule + CheckPlanner）
   Probes/      Sparkle 与 Electron 两套探针 + appcast 解析
   UI/          SwiftUI 界面 + 状态源
+               AppModel（装配根）/ MenuBarContent（菜单栏下拉）/ SettingsView（设置）
+               UpdateWatcher（调度运行时）/ UpdateNotifier（系统通知）
   CLI/         --check / --refresh / --job / --plan / --install / --recover / --snapshot
 Sources/AppUpdater/main.swift   可执行入口
-Tests/AppUpdaterTests/          114 个单元测试
+Tests/AppUpdaterTests/          130+ 个单元测试
 ```
 
-分层的关键约束：**检测逻辑不认识 UI，UI 不认识网络**。
+分层的关键约束：**检测逻辑不认识 UI，UI 不认识网络**。定时检查也守这条：`CheckPlanner`（Core）只回答「现在该不该查」，`UpdateWatcher`（UI）只管计时与唤醒监听，真正查的时候永远调 `UpdateStore.check()`——探测仍然只有 `CheckEngine` 一条路，没有第二套逻辑。
 
 ### 新增一种更新来源
 
@@ -392,13 +411,15 @@ Tests/AppUpdaterTests/          114 个单元测试
 - **扫描器测试** — 对临时构造的伪 `.app` 目录树断言分类结果。
 - **探针测试** — 注入 stub HTTP 客户端，覆盖 200 / 404 / 超时 / 畸形 XML 四条路径。
 - **重点回归** — appcast 增量补丁 7 条、签名校验 6 条（真实 Ed25519 密钥对签名通过、篡改一个字节必须失败、换公钥必须失败、缺公钥判“跳过”而非失败）、中断恢复 10 条。
+- **调度与当日去重** — `CheckPlanner` 全部注入合成时刻（到点/未到/错过/已查过/已触发过/跨天），`UpdateWatcher.tick(now:)` 注入时钟断言「一天只触发一次、跨天再触发」，不真等时间。
+- **设置持久化** — 临时 UserDefaults suite 进出，覆盖默认值、写读回路、越界钳制与文案。
 - **端到端** — 在真机上对真实应用做完整替换。dmg 路径实测 Rectangle `0.86 → 1.100`，zip 路径实测 KeyCastr `0.10.3 → 0.11.1`，升级后 `codesign --verify --deep --strict` 均通过，`/Applications` 无残留、无遗留挂载。
 
 单元测试证明不了真机替换，**这部分必须真跑**。
 
 ## 路线
 
-- **v0.3** — 每日定时后台检查 + 系统通知；菜单栏图标。
+- **v0.3** — 每日定时后台检查 + 系统通知；菜单栏图标。（✅ 已落地；「跳过此版本」推迟，重启条件：用户反馈被通知打扰）
 - **v0.4** — 接入 App Store 应用；针对 Chrome 私有更新接口、JetBrains Toolbox 等做专门适配。
 - **长期** — 支持 Sparkle 增量补丁（`spk!` 格式），大应用（IINA 104 MB、Cherry Studio 372 MB）升级可以少下载很多。
 
