@@ -51,13 +51,27 @@ public struct SelfUpdateManifest: Equatable, Sendable {
     }
 
     /// 签名文件可能是 base64 文本，也可能是 64 字节裸签名。
+    ///
+    /// 先认「解出来正好 64 字节」的 base64 文本（CI 写的就是这种），
+    /// 否则 64 字节载荷按裸签名处理。不能见 UTF-8 就当文本——0x07 这类字节是合法 UTF-8，
+    /// 但并不是签名的 base64。
     public static func signatureString(from data: Data) -> String? {
+        if let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty,
+           let decoded = Data(base64Encoded: text),
+           decoded.count == 64 {
+            return text
+        }
+        guard !data.isEmpty else { return nil }
+        if data.count == 64 {
+            return data.base64EncodedString()
+        }
         if let text = String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !text.isEmpty {
             return text
         }
-        guard !data.isEmpty else { return nil }
         return data.base64EncodedString()
     }
 

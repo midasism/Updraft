@@ -41,10 +41,13 @@ final class SelfUpdateManifestTests: XCTestCase {
     }
 
     func testSignatureStringAcceptsBase64TextOrRawBytes() {
-        let text = SelfUpdateManifest.signatureString(from: Data("AAAA\n".utf8))
-        XCTAssertEqual(text, "AAAA")
-        let raw = Data(repeating: 7, count: 64)
-        XCTAssertEqual(SelfUpdateManifest.signatureString(from: raw), raw.base64EncodedString())
+        let raw = Data(repeating: 0xA5, count: 64)
+        let encoded = raw.base64EncodedString()
+        XCTAssertEqual(SelfUpdateManifest.signatureString(from: Data("\(encoded)\n".utf8)), encoded)
+        XCTAssertEqual(SelfUpdateManifest.signatureString(from: raw), encoded)
+        // 合法 UTF-8 但不是 64 字节签名的 base64，不能误当成文本。
+        let bell = Data(repeating: 7, count: 64)
+        XCTAssertEqual(SelfUpdateManifest.signatureString(from: bell), bell.base64EncodedString())
     }
 }
 
