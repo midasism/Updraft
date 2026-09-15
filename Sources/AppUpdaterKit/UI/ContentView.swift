@@ -18,6 +18,10 @@ public struct ContentView: View {
                 recoveryBanner(notice)
                 Divider()
             }
+            if case .updateAvailable(let release) = store.selfStatus {
+                selfUpdateBanner(release)
+                Divider()
+            }
             statsRow
             Divider()
             content
@@ -25,6 +29,9 @@ public struct ContentView: View {
         .frame(minWidth: 760, minHeight: 520)
         .sheet(item: $store.job) { _ in
             UpgradeSheet(store: store)
+        }
+        .sheet(isPresented: $store.isSelfUpdatePresented) {
+            SelfUpdateSheet(store: store)
         }
     }
 
@@ -101,6 +108,25 @@ public struct ContentView: View {
     }
 
     // MARK: - 统计卡片
+
+    private func selfUpdateBanner(_ release: SelfRelease) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "arrow.up.circle.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.accentColor)
+            Text("Updraft \(release.version) 已发布")
+                .font(.system(size: 12, weight: .medium))
+            Text("当前 \(SelfUpdateIdentity.currentShortVersion ?? "未知")")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Button("查看") { store.presentSelfUpdate() }
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(Color.accentColor.opacity(0.08))
+    }
 
     /// 上一次安装被中断留下的残留被清理/抢救过，如实告知。
     private func recoveryBanner(_ notice: String) -> some View {

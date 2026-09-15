@@ -108,6 +108,42 @@ public struct Installer: Sendable {
         self.backups = backups
     }
 
+    /// 安装行为开关。默认值保持给其他应用升级；自更新走 `selfUpdate(...)`。
+    public struct InstallOptions: Sendable {
+        public var manifestBytes: Data?
+        public var manifestSignature: String?
+        public var publicKeyOverride: String?
+        /// 自更新时不能先把自己退出，否则换包走不到。
+        public var skipQuit: Bool
+        /// 自更新时由新实例启动时再清 `.old`，当前进程可能还住在被改名的包里。
+        public var keepDisplaced: Bool
+        public var alwaysRelaunch: Bool
+
+        public static let standard = InstallOptions(
+            manifestBytes: nil,
+            manifestSignature: nil,
+            publicKeyOverride: nil,
+            skipQuit: false,
+            keepDisplaced: false,
+            alwaysRelaunch: false
+        )
+
+        public static func selfUpdate(
+            manifestBytes: Data?,
+            manifestSignature: String?,
+            publicKey: String
+        ) -> InstallOptions {
+            InstallOptions(
+                manifestBytes: manifestBytes,
+                manifestSignature: manifestSignature,
+                publicKeyOverride: publicKey,
+                skipQuit: true,
+                keepDisplaced: true,
+                alwaysRelaunch: true
+            )
+        }
+    }
+
     // MARK: - 预检：确认框要展示的信息
 
     /// 该应用公布公钥与否，决定了"能不能做密码学校验"。
@@ -190,6 +226,7 @@ public struct Installer: Sendable {
     public func install(
         app: AppInfo,
         release: ReleaseInfo,
+        options: InstallOptions = .standard,
         onProgress: @escaping @Sendable (Progress) -> Void
     ) async -> Report {
         var report = Report(
@@ -270,12 +307,23 @@ public struct Installer: Sendable {
             }
 
             // ── 阶段二：签名校验（动手之前最后一道闸） ──
-            emit(.verifyingSignature, app.canVerifySignature ? "正在用应用公布的公钥校验…" : "该应用未公布公钥，跳过")
-            let signature = SignatureVerifier.verify(
-                fileAt: packageURL,
-                signatureBase64: release.edSignature,
-                publicKeyBase64: app.publicEDKey
-            )
+            let signature: SignatureVerifier.Outcome
+            if options.publicKeyOverride != nil || options.manifestBytes != nil || options.manifestSignature != nil {
+                emit(.verifyingSignature, "正在校验签名清单与安装包校验和…")
+                signature = SelfUpdateVerifier.verifyDownloadedZip(
+                    zip: packageURL,
+                    manifestBytes: options.manifestBytes,
+                    manifestSignature: options.manifestSignature,
+                    publicKey: options.publicKeyOverride ?? app.publicEDKey
+                )
+            } else {
+                emit(.verifyingSignature, app.canVerifySignature ? "正在用应用公布的公钥校验…" : "该应用未公布公钥，跳过")
+                signature = SignatureVerifier.verify(
+                    fileAt: packageURL,
+                    signatureBase64: release.edSignature,
+                    publicKeyBase64: app.publicEDKey
+                )
+            }
             report.signature = signature
             if case .failed(let reason) = signature {
                 throw InstallError.signatureRejected(reason)
@@ -315,8 +363,9 @@ public struct Installer: Sendable {
             }
 
             // ── 阶段六：退出运行中的 App ──
+            // 自更新跳过：当前进程就是目标，先退出换包就做不成。
             let wasRunning = Self.isRunning(bundleID: bundleID)
-            if wasRunning {
+            if wasRunning, !options.skipQuit {
                 emit(.quitting, "正在请求 \(app.name) 退出…")
                 try await quit(bundleID: bundleID, appName: app.name)
             }
@@ -346,11 +395,14 @@ public struct Installer: Sendable {
                 return report
             }
 
-            try? FileManager.default.removeItem(at: displaced)
+            if !options.keepDisplaced {
+                try? FileManager.default.removeItem(at: displaced)
+            }
             report.installedPath = app.path
 
             // ── 收尾：重新打开 + 清理旧备份 ──
-            if wasRunning {
+            // 自更新总是拉起新实例，由它在下次启动时清 `.old`。
+            if wasRunning || options.alwaysRelaunch {
                 emit(.relaunching, "正在重新打开 \(app.name)…")
                 report.relaunched = await Self.launch(app.path)
             }

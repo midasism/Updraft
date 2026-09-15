@@ -54,13 +54,19 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// 启动：调度器先转起来（冷启动补查在这第一拍里发生），再做原有的启动检查。
+    /// 启动：先跑原有的恢复/冷启动检查，再启动定时器。
+    ///
+    /// 这个顺序避免冷启动无缓存时「checkIfNeeded 全量检查」与调度器的补查同时抢跑；
+    /// 有缓存时 checkIfNeeded 只检查 Updraft 自身，随后 watcher 第一拍仍会立即接住错过的时段。
     /// 幂等——窗口重开不会重复启动。
     func start() {
         guard !didStart else { return }
         didStart = true
-        watcher.start()
-        Task { await store.checkIfNeeded() }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.store.checkIfNeeded()
+            self.watcher.start()
+        }
     }
 
     // MARK: - 检查入口
@@ -73,18 +79,35 @@ public final class AppModel: ObservableObject {
     }
 
     private func runCheck() async {
-        await store.check()
-        notifyAfterCheck()
+        // 每日/菜单栏检查同时覆盖「应用更新」与「Updraft 自更新」；两者独立失败、互不清空。
+        // 主应用检查仍然原封不动走 UpdateStore.check → CheckEngine，没有另写探测逻辑。
+        async let apps: Void = store.check()
+        async let selfUpdate: Void = store.checkSelfUpdate()
+        _ = await (apps, selfUpdate)
+        await notifyAfterCheck()
     }
 
-    private func notifyAfterCheck() {
-        let names = Array(store.updates(in: .updateAvailable).prefix(3).map(\.app.name))
-        guard NotificationPolicy.shouldNotify(
+    private func notifyAfterCheck() async {
+        if NotificationPolicy.shouldNotify(
             updateCount: store.updateCount,
             notificationsEnabled: settings.notificationsEnabled,
             mainWindowVisible: mainWindowVisible
-        ) else { return }
-        Task { await notifier.notifyUpdates(count: store.updateCount, sample: names) }
+        ) {
+            let names = Array(store.updates(in: .updateAvailable).prefix(3).map(\.app.name))
+            await notifier.notifyUpdates(count: store.updateCount, sample: names)
+        }
+
+        if case .updateAvailable(let release) = store.selfStatus,
+           NotificationPolicy.shouldNotify(
+               updateCount: 1,
+               notificationsEnabled: settings.notificationsEnabled,
+               mainWindowVisible: mainWindowVisible
+           ) {
+            await notifier.notifySelfUpdate(
+                from: SelfUpdateIdentity.currentShortVersion ?? "未知",
+                to: release.version
+            )
+        }
     }
 
     /// 主窗口是否在用户眼前。找的是 WindowGroup 的标题； SwiftUI 窗口没有稳定的
@@ -104,13 +127,13 @@ public final class AppModel: ObservableObject {
     }
 
     /// 打开（或聚焦）主窗口。通知点击、菜单栏动作共用。
-    /// `route == .selfUpdate` 时直达自更新确认页——**挂钩预留**，等自更新链路交付后接上。
+    /// 自更新通知先把确认页状态置上，再开窗；应用已经退出时系统默认开的主窗口也会读到它。
     func openMainWindow(route: NotificationRoute? = nil) {
+        if route == .selfUpdate {
+            store.presentSelfUpdate()
+        }
         openWindowAction?(id: "main")
         NSApp.activate(ignoringOtherApps: true)
-        if route == .selfUpdate {
-            // TODO(自更新): 切到自更新确认页。
-        }
     }
 
     /// 打开设置窗口（⌘, / 菜单栏 / 主窗口齿轮三个入口共用）。

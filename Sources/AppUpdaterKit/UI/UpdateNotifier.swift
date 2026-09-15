@@ -1,8 +1,7 @@
 import Foundation
 import UserNotifications
 
-/// 通知点击后要去哪。自更新通知直达确认页的挂钩就留在这里——
-/// 等自更新链路交付后由那边触发 `.selfUpdate`，路由侧已经能区分。
+/// 通知点击后要去哪。应用更新开主窗口，自更新直达确认页。
 public enum NotificationRoute: String {
     case updates = "updraft.updates-available"
     case selfUpdate = "updraft.self-update-available"
@@ -56,8 +55,7 @@ final class UpdateNotifier {
         try? await UNUserNotificationCenter.current().add(request)
     }
 
-    /// 自更新可用的专用通知。**接口预留**：等自更新链路交付后由那边调用，
-    /// 点击路由已经在 `NotificationRoute.selfUpdate` 上区分好。
+    /// 自更新可用的专用通知。点击后由 `.selfUpdate` 路由直达自更新确认页。
     func notifySelfUpdate(from: String, to: String) async {
         guard isNotificationCapable, await granted(requestingIfNeeded: true) else { return }
 

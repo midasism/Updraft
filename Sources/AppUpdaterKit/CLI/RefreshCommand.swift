@@ -18,23 +18,24 @@ public enum RefreshCommand {
             print("没有可用的检查结果缓存。先跑一次全量：AppUpdater --check")
             return 1
         }
+        let cached = SelfUpdateIdentity.excludingSelf(snapshot.updates)
 
         let targets: [AppUpdate]
         if appNames.isEmpty {
-            targets = snapshot.updates.filter { $0.app.source.isAutoDetectable }
+            targets = cached.filter { $0.app.source.isAutoDetectable }
         } else {
             let unknown = appNames.filter { name in
-                !snapshot.updates.contains { $0.app.name.localizedCaseInsensitiveCompare(name) == .orderedSame }
+                !cached.contains { $0.app.name.localizedCaseInsensitiveCompare(name) == .orderedSame }
             }
             guard unknown.isEmpty else {
                 print("列表里没有这些应用：\(unknown.joined(separator: "、"))")
                 print("可用的条目：")
-                for update in snapshot.updates.prefix(40) {
+                for update in cached.prefix(40) {
                     print("  · \(update.app.name)")
                 }
                 return 1
             }
-            targets = snapshot.updates.filter { update in
+            targets = cached.filter { update in
                 appNames.contains { update.app.name.localizedCaseInsensitiveCompare($0) == .orderedSame }
             }
         }
@@ -44,8 +45,8 @@ public enum RefreshCommand {
             return 0
         }
 
-        print("→ 增量刷新 \(targets.count) 项（列表共 \(snapshot.updates.count) 项）")
-        print("  不遍历应用目录、不重建 brew 索引、不触碰其余 \(snapshot.updates.count - targets.count) 项")
+        print("→ 增量刷新 \(targets.count) 项（列表共 \(cached.count) 项）")
+        print("  不遍历应用目录、不重建 brew 索引、不触碰其余 \(cached.count - targets.count) 项")
         for update in targets {
             print("    · \(update.app.name)  \(update.detailText)")
         }
@@ -67,7 +68,7 @@ public enum RefreshCommand {
         }
         print(String(format: "本次重新读包并探测 %d 个，耗时 %.2f 秒", report.refreshed.count, elapsed))
 
-        let merged = IncrementalChecker.merge(report.all, into: snapshot.updates)
+        let merged = IncrementalChecker.merge(report.all, into: cached)
         cache.save(.init(updates: merged, savedAt: Date(), lastFullCheckAt: snapshot.lastFullCheckAt))
         print("→ 已并回缓存（\(merged.count) 项），未涉及的条目保持不变")
         return 0

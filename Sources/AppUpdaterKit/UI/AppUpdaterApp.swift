@@ -19,6 +19,12 @@ public struct AppUpdaterApp: App {
                 Button("设置…") { model.openSettings() }
                     .keyboardShortcut(",", modifiers: .command)
             }
+            CommandGroup(after: .appInfo) {
+                Button("检查 Updraft 更新…") {
+                    model.store.presentSelfUpdate()
+                    Task { await model.store.checkSelfUpdate() }
+                }
+            }
         }
 
         // 独立小窗口而不是 sheet：菜单栏触发的场景里主窗口可能是关着的，设置要能独立到达。
@@ -103,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .list, .sound])
     }
 
-    /// 点通知 → 打开主窗口；自更新通知走预留路由（见 NotificationRoute.selfUpdate）。
+    /// 点通知 → 打开主窗口；自更新通知走专用路由并直达确认页。
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
