@@ -12,13 +12,22 @@ final class AppSettingsTests: XCTestCase {
     }
 
     override func tearDown() {
-        UserDefaults().removePersistentDomain(forSuiteName: suiteName)
+        // 不用 removePersistentDomain：它的参数标签在不同 SDK 代际间变过
+        // （forSuiteName → forName），直接删 plist 文件最稳。
+        removeSuite(suiteName)
         suiteName = nil
         super.tearDown()
     }
 
+    private func removeSuite(_ name: String?) {
+        guard let name else { return }
+        let plist = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences/\(name).plist")
+        try? FileManager.default.removeItem(at: plist)
+    }
+
     private func freshDefaults() -> UserDefaults {
-        UserDefaults(suiteName: suiteName)
+        UserDefaults(suiteName: suiteName)!
     }
 
     func testFreshDefaults() {

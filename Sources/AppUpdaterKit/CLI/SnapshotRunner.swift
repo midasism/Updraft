@@ -159,14 +159,26 @@ public enum SnapshotRunner {
                 openSettings: {},
                 quit: {}
             )
-            return AnyView(MenuBarContent(status: status, actions: actions))
+            // 显式定高：NSHostingView 会按自测的内在尺寸收缩，比内容实际高度小时
+            // 居中裁切会把顶部几行裁掉；给定高度并把内容顶对齐，裁切不再发生。
+            return AnyView(
+                MenuBarContent(status: status, actions: actions)
+                    .padding(10)
+                    .frame(width: 300, height: 440, alignment: .top)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            )
         case .settings:
             let defaults = UserDefaults(suiteName: "updraft-snapshot-settings")
             let settings = AppSettings(defaults: defaults)
             settings.scheduledCheckEnabled = true
             settings.scheduledCheckHour = 10
             settings.scheduledCheckMinute = 0
-            return AnyView(SettingsView(settings: settings))
+            // 与 menubar 同一理由：显式定高，防止 NSHostingView 自收缩后居中裁切。
+            return AnyView(
+                SettingsView(settings: settings)
+                    .frame(width: 440, height: 360, alignment: .top)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            )
         case .main, .confirm, .batch, .running, .cancelled:
             return nil
         }

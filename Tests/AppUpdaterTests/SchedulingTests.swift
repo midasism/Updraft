@@ -147,8 +147,11 @@ final class SchedulingTests: XCTestCase {
     private var settingsSuites: [String] = []
 
     override func tearDown() {
+        // 与 AppSettingsTests 同一理由：直接删 plist，绕开 removePersistentDomain 的标签差异。
         for name in settingsSuites {
-            UserDefaults().removePersistentDomain(forSuiteName: name)
+            let plist = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Preferences/\(name).plist")
+            try? FileManager.default.removeItem(at: plist)
         }
         settingsSuites = []
         super.tearDown()
