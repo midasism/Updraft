@@ -31,6 +31,9 @@ public final class AppModel: ObservableObject {
     private var bag: Set<AnyCancellable> = []
     /// 从主窗口环境里捕获的 openWindow 动作，菜单栏与通知点击都靠它开窗。
     private var openWindowAction: OpenWindowAction?
+    /// 通知在主窗口 Scene 出现之前点进来时，先记下路由，等 capture 后再开。
+    private var pendingRoute: NotificationRoute?
+    private var launchObserver: NSObjectProtocol?
 
     public convenience init() {
         self.init(store: UpdateStore(), settings: AppSettings())
@@ -51,6 +54,18 @@ public final class AppModel: ObservableObject {
 
         NotificationRouter.shared.openApp = { [weak self] route in
             self?.openMainWindow(route: route)
+        }
+
+        // 调度器必须跟应用生命周期走，不能绑在主窗口 onAppear 上——关掉窗口后下次
+        // 启动若窗口未被恢复，定时检查就会哑火。didFinishLaunching 时再 start，幂等。
+        launchObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didFinishLaunchingNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.start()
+            }
         }
     }
 
@@ -129,6 +144,14 @@ public final class AppModel: ObservableObject {
     /// 冷启动状态恢复成「窗口关闭」的极端情况下，菜单栏打开一次也会补上。
     func capture(openWindow: OpenWindowAction) {
         openWindowAction = openWindow
+        if let pending = pendingRoute {
+            pendingRoute = nil
+            openWindow(id: "main")
+            if pending == .selfUpdate {
+                store.presentSelfUpdate()
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     /// 打开（或聚焦）主窗口。通知点击、菜单栏动作共用。
@@ -137,13 +160,23 @@ public final class AppModel: ObservableObject {
         if route == .selfUpdate {
             store.presentSelfUpdate()
         }
-        openWindowAction?(id: "main")
+        if let openWindowAction {
+            openWindowAction(id: "main")
+        } else if let window = NSApp.windows.first(where: { $0.title == "App 更新" }) {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            pendingRoute = route ?? .updates
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 
     /// 打开设置窗口（⌘, / 菜单栏 / 主窗口齿轮三个入口共用）。
     func openSettings() {
-        openWindowAction?(id: "settings")
+        if let openWindowAction {
+            openWindowAction(id: "settings")
+        } else if let window = NSApp.windows.first(where: { $0.title == "设置" }) {
+            window.makeKeyAndOrderFront(nil)
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 

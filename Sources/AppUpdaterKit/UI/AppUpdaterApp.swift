@@ -40,15 +40,7 @@ public struct AppUpdaterApp: App {
 
     private var menuBarBase: some Scene {
         MenuBarExtra {
-            MenuBarContent(
-                status: model.menuBarStatus(),
-                actions: .init(
-                    checkNow: { model.checkNowFromMenuBar() },
-                    openMain: { model.openMainWindow() },
-                    openSettings: { model.openSettings() },
-                    quit: { NSApp.terminate(nil) }
-                )
-            )
+            MenuBarExtraRoot(model: model)
         } label: {
             menuLabel
         }
@@ -65,6 +57,30 @@ public struct AppUpdaterApp: App {
         } else {
             Image(systemName: "arrow.triangle.2.circlepath")
         }
+    }
+}
+
+/// 菜单栏下拉的装配壳：每次打开菜单时刷新 openWindow，主窗口从未出现过也能开窗。
+struct MenuBarExtraRoot: View {
+    @Environment(\.openWindow) private var openWindow
+    let model: AppModel
+
+    var body: some View {
+        MenuBarContent(
+            status: model.menuBarStatus(),
+            actions: .init(
+                checkNow: { model.checkNowFromMenuBar() },
+                openMain: {
+                    model.capture(openWindow: openWindow)
+                    model.openMainWindow()
+                },
+                openSettings: {
+                    model.capture(openWindow: openWindow)
+                    model.openSettings()
+                },
+                quit: { NSApp.terminate(nil) }
+            )
+        )
     }
 }
 
