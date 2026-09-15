@@ -35,7 +35,9 @@ final class UpdateNotifier {
 
     /// 「发现 N 个应用可更新」。`sample` 是列表里前几个名字，让通知自带信息量。
     func notifyUpdates(count: Int, sample: [String]) async {
-        guard isNotificationCapable, await granted(requestingIfNeeded: true) else { return }
+        // 发通知时不再请求授权：深夜定时检查弹系统权限框是打扰。
+        // 授权只在启动（用户刚打开应用）和打开通知开关时请求。
+        guard isNotificationCapable, await granted(requestingIfNeeded: false) else { return }
 
         let content = UNMutableNotificationContent()
         content.title = "发现 \(count) 个应用可更新"
@@ -57,7 +59,7 @@ final class UpdateNotifier {
 
     /// 自更新可用的专用通知。点击后由 `.selfUpdate` 路由直达自更新确认页。
     func notifySelfUpdate(from: String, to: String) async {
-        guard isNotificationCapable, await granted(requestingIfNeeded: true) else { return }
+        guard isNotificationCapable, await granted(requestingIfNeeded: false) else { return }
 
         let content = UNMutableNotificationContent()
         content.title = "Updraft 有新版本"

@@ -64,6 +64,11 @@ public final class AppModel: ObservableObject {
         didStart = true
         Task { @MainActor [weak self] in
             guard let self else { return }
+            // 默认开通知：启动时请求授权，让系统弹窗出现在「用户打开了应用」这个上下文里，
+            // 而不是第一次定时检查时突然弹。被拒则后续 notify 静默跳过。
+            if self.settings.notificationsEnabled {
+                await self.notifier.requestAuthorizationIfNeeded()
+            }
             await self.store.checkIfNeeded()
             self.watcher.start()
         }

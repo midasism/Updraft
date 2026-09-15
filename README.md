@@ -65,6 +65,13 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 左：升级确认页。动手前把所有要发生的事列清楚——包体积、下载来源、验签方式、备份路径、升级期间应用是否需要先退出。
 右：批量升级清单。只列出自动化能走完的条目，装不了的（需要管理员密码、没有公开安装包）不会混进来。
 
+<p align="center">
+  <img src="docs/screenshots/ui-v0.4-menubar.png" width="280" alt="菜单栏下拉：待更新数、上次检查、立即检查">
+  <img src="docs/screenshots/ui-v0.4-settings.png" width="420" alt="设置：每日定时检查与系统通知开关">
+</p>
+
+左：菜单栏下拉（合成状态，条目与真机一致；真机是系统原生菜单外观）。右：设置窗口——定时检查时刻和通知开关改完即生效，重启后仍在。系统通知横幅依赖权限，走不了 `--snapshot`，真机关主窗口后点「立即检查」即可看到。
+
 ## 安装
 
 ### 一行命令（最省事，不用管 Gatekeeper）
@@ -348,11 +355,13 @@ Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但
 
 ```bash
 swift build --disable-sandbox      # 编译
-swift test  --disable-sandbox      # 单元测试（当前 150+ 个）
+swift test  --disable-sandbox      # 单元测试（当前 170+ 个；需要完整 Xcode）
 ```
 
 > [!WARNING]
 > 若报 `sandbox-exec: sandbox_apply: Operation not permitted`，说明 SwiftPM 编译 manifest 时套的内层沙箱被挡了（受限终端、沙箱化 IDE、CI 容器里都常见），加 `--disable-sandbox` 即可。这是环境问题，不是代码问题。
+>
+> `swift test` 还需要完整 Xcode，不只 Command Line Tools。只有 CLT 时会报 `no such module 'XCTest'`，`swift build` 与运行不受影响。
 
 CI 在 `macos-latest` 上跑 `swift build`（Debug + Release）与 `swift test`，见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
 

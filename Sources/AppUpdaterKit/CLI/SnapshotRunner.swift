@@ -95,8 +95,8 @@ public enum SnapshotRunner {
     private static func defaultCanvas(for mode: Mode) -> NSSize {
         switch mode {
         case .main: NSSize(width: 880, height: 660)
-        case .menubar: NSSize(width: 300, height: 330)
-        case .settings: NSSize(width: 460, height: 320)
+        case .menubar: NSSize(width: 280, height: 220)
+        case .settings: NSSize(width: 484, height: 280)
         default: NSSize(width: 600, height: 540)
         }
     }
@@ -163,8 +163,9 @@ public enum SnapshotRunner {
             // 居中裁切会把顶部几行裁掉；给定高度并把内容顶对齐，裁切不再发生。
             return AnyView(
                 MenuBarContent(status: status, actions: actions)
-                    .padding(10)
-                    .frame(width: 300, height: 440, alignment: .top)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(width: 280, alignment: .top)
                     .background(Color(nsColor: .windowBackgroundColor))
             )
         case .settings:
@@ -173,10 +174,9 @@ public enum SnapshotRunner {
             settings.scheduledCheckEnabled = true
             settings.scheduledCheckHour = 10
             settings.scheduledCheckMinute = 0
-            // 与 menubar 同一理由：显式定高，防止 NSHostingView 自收缩后居中裁切。
+            settings.notificationsEnabled = true
             return AnyView(
                 SettingsView(settings: settings)
-                    .frame(width: 440, height: 360, alignment: .top)
                     .background(Color(nsColor: .windowBackgroundColor))
             )
         case .main, .confirm, .batch, .running, .cancelled:
