@@ -53,6 +53,7 @@ public final class UpdateStore: ObservableObject {
     private let installer = Installer()
     private let backups = BackupStore()
     private var didRunRecovery = false
+    private var selfCheckTask: Task<SelfUpdateStatus, Never>?
 
     /// 上一次全量检查用过的 brew 索引。
     ///
@@ -60,6 +61,8 @@ public final class UpdateStore: ObservableObject {
     /// 省掉 `brew list` + `brew info --json=v2` 这一整轮（cask 多的时候是最贵的一笔）。
     private var caskIndex: BrewCaskIndex?
     private var lastFullCheckAt: Date?
+    /// 上一次全量检查开始的时刻：每日去重按它归属哪一天，不按跨午夜后的完成时间。
+    public private(set) var lastCheckStartedAt: Date?
 
     public convenience init() {
         self.init(engine: CheckEngine(), cache: StateCache())
@@ -76,12 +79,22 @@ public final class UpdateStore: ObservableObject {
             // 所以"上次检查"取全量时间，取不到（旧版缓存）才退回 savedAt。
             lastFullCheckAt = snapshot.lastFullCheckAt ?? snapshot.savedAt
             lastChecked = lastFullCheckAt
+            // 旧版缓存没有 startedAt，只能退回完成时间；写下一次全量检查后会自动补齐。
+            lastCheckStartedAt = snapshot.lastFullCheckStartedAt ?? lastFullCheckAt
             isShowingCachedResult = true
         }
     }
 
     /// 全量扫描或增量刷新是否正在进行。两者都会改 `updates`，不能并发。
     public var isBusy: Bool { isChecking || isRefreshing }
+
+    /// 当前是否禁止开始新的检查。
+    ///
+    /// 安装期间扫描会读到换包中间态；若它一直跑到升级收尾，`refreshTouchedApps()` 又会因
+    /// `isBusy` 拒绝增量刷新，最终可能把安装前结论写成最终缓存。检查和任何安装必须互斥。
+    public var isCheckBlocked: Bool {
+        isBusy || job?.isRunning == true || isInstallingSelf
+    }
 
     // MARK: - 派生数据
 
@@ -145,7 +158,8 @@ public final class UpdateStore: ObservableObject {
     }
 
     public func check() async {
-        guard !isBusy else { return }
+        guard !isCheckBlocked else { return }
+        let startedAt = Date()
         isChecking = true
         statusMessage = "正在读取 Homebrew 索引…"
         isShowingCachedResult = false
@@ -184,6 +198,7 @@ public final class UpdateStore: ObservableObject {
         updates = results
         lastChecked = Date()
         lastFullCheckAt = lastChecked
+        lastCheckStartedAt = startedAt
         statusMessage = ""
         isChecking = false
         saveCache()
@@ -240,7 +255,12 @@ public final class UpdateStore: ObservableObject {
     }
 
     private func saveCache() {
-        cache.save(.init(updates: updates, savedAt: Date(), lastFullCheckAt: lastFullCheckAt))
+        cache.save(.init(
+            updates: updates,
+            savedAt: Date(),
+            lastFullCheckAt: lastFullCheckAt,
+            lastFullCheckStartedAt: lastCheckStartedAt
+        ))
     }
 
     // MARK: - 升级任务的编排
@@ -478,9 +498,17 @@ public final class UpdateStore: ObservableObject {
 
     /// 查 GitHub Releases。失败只记在 `selfStatus` 里，不影响主列表。
     public func checkSelfUpdate() async {
-        guard !isCheckingSelf, !isInstallingSelf else { return }
+        guard !isInstallingSelf else { return }
+        if let selfCheckTask {
+            selfStatus = await selfCheckTask.value
+            return
+        }
+
         isCheckingSelf = true
-        let status = await SelfUpdateChecker().check()
+        let task = Task { await SelfUpdateChecker().check() }
+        selfCheckTask = task
+        let status = await task.value
+        selfCheckTask = nil
         selfStatus = status
         isCheckingSelf = false
     }

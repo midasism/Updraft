@@ -94,15 +94,24 @@ final class UpdateWatcher: ObservableObject {
 
     /// 一次判定。`now` 可注入，调度与当日去重的测试不依赖真实时间。
     func tick(now: Date = Date()) {
-        guard !store.isBusy else { return }
+        guard !store.isCheckBlocked else { return }
         guard planner.isDue(
             schedule: settings.schedule,
-            lastChecked: store.lastChecked,
+            lastSatisfied: store.lastCheckStartedAt,
             lastTriggered: lastTriggered,
             now: now
         ) else { return }
 
         lastTriggered = now
-        Task { @MainActor [fire] in await fire() }
+        Task { @MainActor [weak self, fire] in
+            guard let self else { return }
+            // tick 返回到 fire 真正开跑之间，用户可能刚好开始安装。此时把本次触发撤回，
+            // 不吃掉今天的机会；安装结束后下一拍会重试。
+            guard !self.store.isCheckBlocked else {
+                if self.lastTriggered == now { self.lastTriggered = nil }
+                return
+            }
+            await fire()
+        }
     }
 }
