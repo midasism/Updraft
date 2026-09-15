@@ -15,6 +15,12 @@ public struct AppUpdaterApp: App {
         .defaultSize(width: 820, height: 620)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(after: .appInfo) {
+                Button("检查 Updraft 更新…") {
+                    store.presentSelfUpdate()
+                    Task { await store.checkSelfUpdate() }
+                }
+            }
         }
     }
 }

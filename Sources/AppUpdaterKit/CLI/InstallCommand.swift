@@ -79,7 +79,7 @@ public enum InstallCommand {
         let index = outcome.index
         let scanned = await Task.detached { AppScanner().scan() }.value
         let classifier = AppClassifier(caskIndex: index)
-        var apps = scanned.map { classifier.classify($0) }
+        var apps = SelfUpdateIdentity.excludingSelf(scanned.map { classifier.classify($0) })
 
         if let index {
             let known = Set(apps.compactMap { app -> String? in

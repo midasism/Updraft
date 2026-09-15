@@ -43,6 +43,24 @@ public enum SignatureVerifier {
         signatureBase64: String?,
         publicKeyBase64: String?
     ) -> Outcome {
+        guard let payload = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+            if trimmed(publicKeyBase64) == nil {
+                return .skipped(reason: "该应用未公布签名公钥")
+            }
+            if trimmed(signatureBase64) == nil {
+                return .skipped(reason: "更新源未提供签名")
+            }
+            return .failed(reason: "安装包无法读取")
+        }
+        return verify(payload: payload, signatureBase64: signatureBase64, publicKeyBase64: publicKeyBase64)
+    }
+
+    /// 校验一段已经在手里的字节。自更新签的是清单，不是整个 zip。
+    public static func verify(
+        payload: Data,
+        signatureBase64: String?,
+        publicKeyBase64: String?
+    ) -> Outcome {
         guard let publicKeyBase64 = trimmed(publicKeyBase64) else {
             return .skipped(reason: "该应用未公布签名公钥")
         }
@@ -55,15 +73,12 @@ public enum SignatureVerifier {
         guard let signature = Data(base64Encoded: signatureBase64), signature.count == 64 else {
             return .failed(reason: "签名格式不正确")
         }
-        guard let payload = try? Data(contentsOf: url, options: .mappedIfSafe) else {
-            return .failed(reason: "安装包无法读取")
-        }
 
         do {
             let key = try Curve25519.Signing.PublicKey(rawRepresentation: keyData)
             return key.isValidSignature(signature, for: payload)
                 ? .verified
-                : .failed(reason: "签名与安装包不匹配")
+                : .failed(reason: "签名与内容不匹配")
         } catch {
             return .failed(reason: "公钥无法使用")
         }
