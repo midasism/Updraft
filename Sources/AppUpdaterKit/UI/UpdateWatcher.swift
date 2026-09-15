@@ -16,7 +16,10 @@ final class UpdateWatcher: ObservableObject {
     private static let tickInterval: TimeInterval = 30
 
     private let planner: CheckPlanner
-    private weak var store: UpdateStore?
+    /// 强持有：装配关系是 AppModel → watcher → store，无环。
+    /// 曾经用 weak，结果测试里局部构造的 store 在返回后就被释放、tick 静默失效——
+    /// weak 在这里换不来任何安全性，只换来一个坑。
+    private let store: UpdateStore
     private let settings: AppSettings
     private let fire: () async -> Void
 
@@ -91,7 +94,6 @@ final class UpdateWatcher: ObservableObject {
 
     /// 一次判定。`now` 可注入，调度与当日去重的测试不依赖真实时间。
     func tick(now: Date = Date()) {
-        guard let store else { return }
         guard !store.isBusy else { return }
         guard planner.isDue(
             schedule: settings.schedule,
