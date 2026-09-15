@@ -9,11 +9,20 @@ public enum HeadlessCheck {
         let started = Date()
 
         print("→ 读取 Homebrew 索引…")
-        let index = await BrewService.loadIndex()
-        if let index {
-            print("  已安装 cask \(index.installedTokens.count) 个，其中纯命令行工具 \(index.binaryOnlyTokens.count) 个")
-        } else {
-            print("  ⚠︎ 未找到 Homebrew 或读取失败，cask 类检测已跳过")
+        let outcome = await BrewService.loadIndex()
+        let index = outcome.index
+        switch outcome.status {
+        case .ok:
+            print("  已安装 cask \(index?.installedTokens.count ?? 0) 个，其中纯命令行工具 \(index?.binaryOnlyTokens.count ?? 0) 个")
+        case .brewNotFound:
+            print("  ⚠︎ 未找到 Homebrew，cask 类检测已跳过")
+        case .listFailed(let stderr):
+            print("  ⚠︎ Homebrew 索引读取失败，cask 类检测已跳过")
+            printBrewError(stderr)
+        case .partial(let skipped, let stderr):
+            print("  已安装 cask \(index?.installedTokens.count ?? 0) 个，其中纯命令行工具 \(index?.binaryOnlyTokens.count ?? 0) 个")
+            print("  ⚠︎ \(skipped.count) 个 cask 读取失败已跳过：\(skipped.joined(separator: "、"))")
+            printBrewError(stderr)
         }
 
         print("→ 扫描应用…")
@@ -75,5 +84,16 @@ public enum HeadlessCheck {
         let elapsed = Date().timeIntervalSince(started)
         print("")
         print(String(format: "耗时 %.1f 秒", elapsed))
+    }
+
+    /// brew 的报错首行往往一句话就说清了原因，打印出来省得用户瞎猜。
+    private static func printBrewError(_ stderr: String) {
+        let line = stderr
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        if let line {
+            print("    ↳ \(line)")
+        }
     }
 }

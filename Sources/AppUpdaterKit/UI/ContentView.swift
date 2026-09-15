@@ -39,11 +39,12 @@ public struct ContentView: View {
 
             Spacer(minLength: 12)
 
-            if !store.brewAvailable {
-                Label("未找到 Homebrew", systemImage: "exclamationmark.triangle")
+            if let notice = store.brewNotice {
+                Label(notice, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .labelStyle(.titleAndIcon)
+                    .help(notice)
             }
 
             if store.automatedUpdateCount > 1, store.job?.isRunning != true {

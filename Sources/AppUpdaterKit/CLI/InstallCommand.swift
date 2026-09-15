@@ -72,7 +72,11 @@ public enum InstallCommand {
 
     private static func prepare() async -> Context {
         print("→ 扫描并查询更新状态…")
-        let index = await BrewService.loadIndex()
+        let outcome = await BrewService.loadIndex()
+        if let notice = outcome.status.notice {
+            print("  ⚠︎ \(notice)")
+        }
+        let index = outcome.index
         let scanned = await Task.detached { AppScanner().scan() }.value
         let classifier = AppClassifier(caskIndex: index)
         var apps = scanned.map { classifier.classify($0) }

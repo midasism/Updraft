@@ -11,7 +11,8 @@ public final class UpdateStore: ObservableObject {
     @Published public private(set) var isRefreshing = false
     @Published public private(set) var lastChecked: Date?
     @Published public private(set) var statusMessage = ""
-    @Published public private(set) var brewAvailable = true
+    /// Homebrew 索引的读取状态。`nil` 表示一切正常；否则界面上要展示这条提示。
+    @Published public private(set) var brewNotice: String?
 
     /// 当前展示的是上一次的缓存结果（冷启动时先渲染，再后台刷新）。
     @Published public private(set) var isShowingCachedResult = false
@@ -137,8 +138,9 @@ public final class UpdateStore: ObservableObject {
         statusMessage = "正在读取 Homebrew 索引…"
         isShowingCachedResult = false
 
-        let index = await BrewService.loadIndex()
-        brewAvailable = index != nil
+        let outcome = await BrewService.loadIndex()
+        brewNotice = outcome.status.notice
+        let index = outcome.index
         caskIndex = index
 
         statusMessage = "正在扫描应用…"
