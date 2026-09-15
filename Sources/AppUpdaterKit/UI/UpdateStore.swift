@@ -118,8 +118,11 @@ public final class UpdateStore: ObservableObject {
 
     public func checkIfNeeded() async {
         runStartupRecovery()
-        Task { await checkSelfUpdate() }
+        // 自更新与主应用检查互不依赖，并行跑；等两边都收尾后再让上层启动定时器，
+        // 避免冷启动检查与「错过时段补查」同时抢跑。
+        async let selfUpdate: Void = checkSelfUpdate()
         if updates.isEmpty { await check() }
+        _ = await selfUpdate
     }
 
     /// 启动时收拾上一次的残局。

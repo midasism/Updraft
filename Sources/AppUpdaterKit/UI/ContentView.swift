@@ -2,9 +2,12 @@ import SwiftUI
 
 public struct ContentView: View {
     @ObservedObject private var store: UpdateStore
+    /// 打开设置窗口；nil 时不显示齿轮（截图通道走默认值，不需要真窗口路由）。
+    private let openSettings: (() -> Void)?
 
-    public init(store: UpdateStore) {
+    public init(store: UpdateStore, openSettings: (() -> Void)? = nil) {
         self.store = store
+        self.openSettings = openSettings
     }
 
     public var body: some View {
@@ -73,6 +76,17 @@ public struct ContentView: View {
                 .frame(minWidth: 68)
             }
             .disabled(store.isBusy || store.job?.isRunning == true)
+
+            if let openSettings {
+                Button {
+                    openSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(.borderless)
+                .help("设置")
+                .disabled(store.job?.isRunning == true)
+            }
         }
         .padding(.leading, 20)
         .padding(.trailing, 20)
