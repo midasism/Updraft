@@ -282,9 +282,13 @@ public final class UpdateStore: ObservableObject {
     ///   结果升的是全量二十几个，而他一个都没看见。
     public func requestUpgradeAll(visible: [AppUpdate]? = nil) {
         guard job?.isRunning != true else { return }
-        let candidates = Self.automatedCandidates(in: visible ?? updates)
-        guard !candidates.isEmpty else { return }
-        job = UpgradeJob(items: candidates.compactMap { makeItem(from: $0) })
+        // 守卫判的是 compactMap 之后的结果，而不是它之前的 `candidates`。两者当前
+        // 等价（见 automatedCandidates 的说明），但判前者这层就没法被绕过：将来谁
+        // 给 InstallAction 加一个 isAutomated 却生成不出 item 的情形，这里会安静地
+        // 什么都不做，而不是弹出一个空的升级面板。
+        let items = Self.automatedCandidates(in: visible ?? updates).compactMap { makeItem(from: $0) }
+        guard !items.isEmpty else { return }
+        job = UpgradeJob(items: items)
     }
 
     /// 从一批条目里挑出本工具能自己走完安装的那些。
@@ -293,9 +297,13 @@ public final class UpdateStore: ObservableObject {
     /// 扫描，测试里造不出来。而「只升传进来的这批」恰恰是最需要守住的边界，
     /// 不能只靠读代码相信。
     ///
-    /// `candidates` 已经全部是 `.updateAvailable`（`installAction` 只在这种情况下
-    /// 才不是 `.manual`），所以 `makeItem` 不会在这里丢掉任何一条。
-    public static func automatedCandidates(in updates: [AppUpdate]) -> [AppUpdate] {
+    /// `nonisolated` 不是随手加的：这函数只碰自己的入参，不读任何 actor 状态。少了它，
+    /// 非 MainActor 的调用方（XCTest 用例、CLI）就没法同步调它，只能加 `await` 或者
+    /// 把谓词再抄一遍——两条路都比这行注解糟。
+    ///
+    /// 返回值全部是 `.updateAvailable`（`installAction` 只在这种情况下才不是 `.manual`），
+    /// 所以 `makeItem` 目前不会丢掉其中任何一条。
+    public nonisolated static func automatedCandidates(in updates: [AppUpdate]) -> [AppUpdate] {
         updates.filter { $0.installAction.isAutomated }
     }
 

@@ -51,7 +51,7 @@ public enum InstallCommand {
 
     public static func runAll(dryRun: Bool) async -> Int32 {
         let context = await prepare()
-        let candidates = context.updates.filter { $0.group == .updateAvailable && $0.installAction.isAutomated }
+        let candidates = UpdateStore.automatedCandidates(in: context.updates)
         guard !candidates.isEmpty else {
             print("没有可自动升级的条目。")
             return 0
