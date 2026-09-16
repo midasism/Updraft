@@ -24,6 +24,10 @@ public enum SnapshotRunner {
         case menubar
         /// 设置窗口。**合成状态**（临时 suite 的设置对象），不持久化、不触发授权。
         case settings
+        /// 设置窗口里「清理备份」的就地确认态。**合成状态**：先把数字钉死，才能确认
+        /// 确认按钮出现后那一行没有把说明文字挤变形、也没有把按钮裁出画布。
+        /// 这是清理动作最后一道人工闸门，值得留一张图。
+        case settingsConfirm = "settings-confirm"
         /// 主窗口在「Homebrew 账本滞后于磁盘」下的样子。**合成状态**：这个界面状态要求
         /// 机器上某个 cask 恰好被应用自带的更新器升过而 brew 记录没跟上，账本一被修正
         /// 就再也复现不了；合成即确定，重跑必然得到同一张图。
@@ -98,7 +102,7 @@ public enum SnapshotRunner {
                 FileHandle.standardError.write(Data("没有找到可自动升级的条目，退回主窗口截图\n".utf8))
                 root = AnyView(ContentView(store: store))
             }
-        case .menubar, .settings, .ledger:
+        case .menubar, .settings, .settingsConfirm, .ledger:
             // 上面 syntheticRoot / ledger 分支已接住，不会走到这里。
             root = AnyView(EmptyView())
         }
@@ -110,7 +114,9 @@ public enum SnapshotRunner {
         switch mode {
         case .main, .ledger: NSSize(width: 880, height: 660)
         case .menubar: NSSize(width: 280, height: 220)
-        case .settings: NSSize(width: 484, height: 280)
+        // 高度按设置页实际内容量给：三节（定时检查 / 通知 / 备份）。截短了会把
+        // 备份那一节裁掉一半，而截图的意义就是"看得见"。
+        case .settings, .settingsConfirm: NSSize(width: 484, height: 460)
         default: NSSize(width: 600, height: 540)
         }
     }
@@ -182,16 +188,21 @@ public enum SnapshotRunner {
                     .frame(width: 280, alignment: .top)
                     .background(Color(nsColor: .windowBackgroundColor))
             )
-        case .settings:
+        case .settings, .settingsConfirm:
             let defaults = UserDefaults(suiteName: "updraft-snapshot-settings")
             let settings = AppSettings(defaults: defaults)
             settings.scheduledCheckEnabled = true
             settings.scheduledCheckHour = 10
             settings.scheduledCheckMinute = 0
             settings.notificationsEnabled = true
+            // 数字是钉死的：截图要能重跑并给出同一张图，所以不去量真实的备份目录。
             return AnyView(
-                SettingsView(settings: settings)
-                    .background(Color(nsColor: .windowBackgroundColor))
+                SettingsView(
+                    settings: settings,
+                    backups: BackupPanelState(bytes: 1_830_000_000),
+                    confirmingClear: mode == .settingsConfirm
+                )
+                .background(Color(nsColor: .windowBackgroundColor))
             )
         case .main, .confirm, .batch, .running, .cancelled, .ledger:
             return nil
@@ -201,7 +212,7 @@ public enum SnapshotRunner {
     /// 造一个升级任务，把面板推到确认态。
     private static func prepareJob(store: UpdateStore, mode: Mode, flag: Flag) {
         switch mode {
-        case .main, .running, .cancelled, .menubar, .settings, .ledger:
+        case .main, .running, .cancelled, .menubar, .settings, .settingsConfirm, .ledger:
             break
         case .confirm:
             if let update = store.updates(in: .updateAvailable)
@@ -218,7 +229,7 @@ public enum SnapshotRunner {
     /// 造一个完全确定的升级任务，用来渲染"卡住 / 取消"相关的界面。
     private static func syntheticJob(for mode: Mode) -> UpgradeJob? {
         switch mode {
-        case .main, .confirm, .batch, .menubar, .settings, .ledger:
+        case .main, .confirm, .batch, .menubar, .settings, .settingsConfirm, .ledger:
             return nil
 
         case .running:

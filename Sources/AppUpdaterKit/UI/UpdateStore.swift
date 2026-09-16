@@ -39,6 +39,14 @@ public final class UpdateStore: ObservableObject {
     /// 上次运行被中断留下的残留被处理过，需要让用户知道。
     @Published public private(set) var recoveryNotice: String?
 
+    /// 量好的备份占用字节数。`nil` 表示还没量过（界面显示「正在统计…」）。
+    ///
+    /// 刻意不提供"直接读一下"的同步入口：`BackupStore.totalSize()` 是整树遍历，
+    /// 备份动辄上 G、几万个文件，放在主线程上会把界面钉住。
+    @Published public private(set) var backupUsage: Int64?
+    /// 正在清理备份。要真删几万个文件，界面得能表示"在做事"，也得防重复点。
+    @Published public private(set) var isClearingBackups = false
+
     /// 本工具自更新。不混进主应用列表，单独一条状态。
     @Published public private(set) var selfStatus: SelfUpdateStatus?
     @Published public private(set) var isCheckingSelf = false
@@ -115,11 +123,37 @@ public final class UpdateStore: ObservableObject {
         return "\(Int(elapsed / 86_400)) 天前检查"
     }
 
-    /// 备份占用的磁盘空间说明。
-    public func backupUsageText() -> String {
-        let size = backups.totalSize()
-        guard size > 0 else { return "暂无备份" }
-        return AppUpdate.formatBytes(size)
+    /// 备份占用的文案。**纯函数**——真正去量它的是 `refreshBackupUsage()`。
+    ///
+    /// 做成 `nonisolated static` 有两个理由：能被断言（`backupUsage` 是 `private(set)`，
+    /// 测试里造不出那个状态），以及让人没法从这个名字里顺手把 IO 引回主线程。
+    public nonisolated static func backupUsageText(bytes: Int64?) -> String {
+        guard let bytes else { return "正在统计…" }
+        guard bytes > 0 else { return "暂无备份" }
+        return AppUpdate.formatBytes(bytes)
+    }
+
+    /// 量一次备份占用。整树遍历放到主线程之外。
+    public func refreshBackupUsage() async {
+        let store = backups
+        backupUsage = await Task.detached { store.totalSize() }.value
+    }
+
+    /// 清空全部备份。
+    ///
+    /// **没有撤销**：调这个之前，界面必须已经问过用户了（见 `SettingsView` 的两步确认）。
+    /// 这里只负责做事和把量到的占用更新掉。
+    @discardableResult
+    public func clearBackups() async -> BackupStore.ClearReport {
+        guard !isClearingBackups else { return BackupStore.ClearReport(removed: 0, freedBytes: 0) }
+        isClearingBackups = true
+        let store = backups
+        let report = await Task.detached { store.clearAll() }.value
+        // 清理后重新量：清完是 0 还是剩了点（删不掉的条目），界面要如实反映，
+        // 不能直接把 0 写上去。
+        backupUsage = await Task.detached { store.totalSize() }.value
+        isClearingBackups = false
+        return report
     }
 
     // MARK: - 检查

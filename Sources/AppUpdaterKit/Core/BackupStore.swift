@@ -106,6 +106,9 @@ public struct BackupStore: Sendable {
     }
 
     /// 所有应用占用的备份总大小，界面提示用。
+    ///
+    /// 注意它是**同步**的，会遍历整棵备份树。备份动辄上 G、几万个文件，
+    /// 这个调用不适合放在主线程上（界面里请走 `UpdateStore.refreshBackupUsage()`）。
     public func totalSize() -> Int64 {
         guard let enumerator = FileManager.default.enumerator(
             at: root,
@@ -121,6 +124,56 @@ public struct BackupStore: Sendable {
             total += Int64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
         }
         return total
+    }
+
+    /// 清空全部备份的结果。
+    public struct ClearReport: Sendable, Equatable {
+        /// 实际删掉的顶层条目数（通常等于备份过的应用数）。
+        public let removed: Int
+        /// 清理前量到的总占用，即这次释放掉的字节数。
+        public let freedBytes: Int64
+
+        public init(removed: Int, freedBytes: Int64) {
+            self.removed = removed
+            self.freedBytes = freedBytes
+        }
+    }
+
+    /// 删掉全部备份，保留 `root` 目录本身。返回删了多少、释放了多少。
+    ///
+    /// **这个函数由界面上的一个按钮直接触发，没有撤销。** 所以两件事都做了收窄：
+    /// 只删 `root` 的**直接子项**（不做任何递归推断），以及进门先过一道
+    /// `isSafeToClear` 护栏。路径推断错一次就是不可逆的数据丢失，宁可这里多写三行。
+    @discardableResult
+    public func clearAll() -> ClearReport {
+        let fm = FileManager.default
+        guard isSafeToClear else { return ClearReport(removed: 0, freedBytes: 0) }
+
+        let freed = totalSize()
+        guard let entries = try? fm.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return ClearReport(removed: 0, freedBytes: 0)
+        }
+
+        var removed = 0
+        for entry in entries where (try? fm.removeItem(at: entry)) != nil {
+            removed += 1
+        }
+        return ClearReport(removed: removed, freedBytes: freed)
+    }
+
+    /// 护栏：拒绝明显不该被清空的目标。
+    ///
+    /// 挡掉根目录与家目录，以及层级过浅的路径（`/tmp` 这种），不要求目录名必须叫
+    /// `Backups`——测试注入的临时目录另有其名，按名字判会把测试一起挡掉。
+    var isSafeToClear: Bool {
+        let path = root.standardizedFileURL.path
+        guard path != "/" else { return false }
+        guard path != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path else { return false }
+        return URL(fileURLWithPath: path).pathComponents.count >= 3
     }
 
     private func sanitizedVersion(_ version: String?) -> String {
