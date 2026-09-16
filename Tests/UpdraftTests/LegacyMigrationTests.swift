@@ -9,7 +9,7 @@ import XCTest
 /// 3. 自更新换包时旧目录名被规范成 `Updraft.app`。
 ///
 /// 全部在临时目录与随机 suite 上跑，绝不碰用户真实的
-/// `~/Library/Application Support/Updraft` 与 `com.local.updraft`。
+/// `~/Library/Application Support/Updraft` 与 `com.local.updraft.settings`。
 final class LegacyMigrationTests: XCTestCase {
     private var root: URL!
 
@@ -163,5 +163,45 @@ final class LegacyMigrationTests: XCTestCase {
 
         XCTAssertTrue(LegacyMigration.migrateDefaults(from: legacySuite, to: newSuite))
         XCTAssertFalse(LegacyMigration.migrateDefaults(from: legacySuite, to: newSuite))
+    }
+
+    /// 只搬老域**自己的**键。
+    ///
+    /// 用 `dictionaryRepresentation()` 会把 NSGlobalDomain 的六十多个系统键（语言、
+    /// 触控板手势…）一起端上来——实测同一份 suite 是 64 个键 vs 我们自己的 2 个。
+    /// 这条按「落盘的键集合」断言，顺带证明搬过去的确实只有该域的东西。
+    func testDefaultsMigrationCopiesOnlyTheLegacyDomain() throws {
+        let legacySuite = "\(SelfUpdateIdentity.bundleID).legacy-scoped.\(UUID().uuidString)"
+        let newSuite = "\(SelfUpdateIdentity.bundleID).new-scoped.\(UUID().uuidString)"
+        defer {
+            UserDefaults().removePersistentDomain(forName: legacySuite)
+            UserDefaults().removePersistentDomain(forName: newSuite)
+        }
+
+        let legacy = try XCTUnwrap(UserDefaults(suiteName: legacySuite))
+        legacy.set(7, forKey: "check.schedule.hour")
+        legacy.set(30, forKey: "check.schedule.minute")
+
+        XCTAssertTrue(LegacyMigration.migrateDefaults(from: legacySuite, to: newSuite))
+
+        let landed = UserDefaults.standard.persistentDomain(forName: newSuite) ?? [:]
+        XCTAssertEqual(
+            landed.keys.sorted(),
+            ["check.schedule.hour", "check.schedule.minute", LegacyMigration.completedKey].sorted()
+        )
+    }
+
+    /// 老域压根不存在时不许崩，也不许每次启动都重扫一遍。
+    func testDefaultsMigrationStillMarksCompleteWhenLegacyDomainIsAbsent() throws {
+        let absent = "\(SelfUpdateIdentity.bundleID).legacy-absent.\(UUID().uuidString)"
+        let newSuite = "\(SelfUpdateIdentity.bundleID).new-absent.\(UUID().uuidString)"
+        defer { UserDefaults().removePersistentDomain(forName: newSuite) }
+
+        XCTAssertFalse(LegacyMigration.migrateDefaults(from: absent, to: newSuite), "没搬到东西就不该报成功")
+        XCTAssertTrue(
+            try XCTUnwrap(UserDefaults(suiteName: newSuite)).bool(forKey: LegacyMigration.completedKey),
+            "标记还是要打上，否则每次启动都白扫一遍"
+        )
+        XCTAssertFalse(LegacyMigration.migrateDefaults(from: absent, to: newSuite))
     }
 }

@@ -3,13 +3,21 @@ import Foundation
 
 /// 应用设置：定时检查开关/时刻、系统通知开关。UserDefaults 固定 suite 持久化。
 ///
-/// 固定 suite（与打包脚本的 BUNDLE_ID 一致）而不是 `standard`，理由和 StateCache
-/// 固定路径相同：这个工具既能以 `.app` 包跑、也能裸跑可执行文件（swift run / 直调二进制），
-/// `standard` 在两种形态下是两个不同的域，设置会互相看不见。
+/// 固定 suite（而不是 `standard`）的理由和 StateCache 固定路径相同：这个工具既能以
+/// `.app` 包跑、也能裸跑可执行文件（swift run / 直调二进制），`standard` 在两种形态下
+/// 是两个不同的域，设置会互相看不见。
+///
+/// ⚠️ suite 名**不能等于自己的 bundle id**：macOS 会让 `UserDefaults(suiteName:)` 直接
+/// 返回 nil（详见 `SelfUpdateIdentity.settingsSuiteName`）。历史版本正是踩在这里——
+/// 读值走 nil 回退默认、写值走 `.standard`，表现成「设置改了不生效、重启回默认」。
 @MainActor
 public final class AppSettings: ObservableObject {
-    /// 与 `scripts/build-app.sh` 的 BUNDLE_ID 保持一致；.app 形态下与 standard 同域。
-    public static let suiteName = "com.local.updraft"
+    /// 刻意与 bundle id 错开，理由见 `SelfUpdateIdentity.settingsSuiteName`。
+    ///
+    /// `nonisolated`：它是纯常量，而 `resolveStore` 的默认参数在非 MainActor 上下文求值
+    /// （少了它会报 "main actor-isolated static property can not be referenced from a
+    /// nonisolated context"）。测试也能从非 MainActor 的用例里直接读。
+    public nonisolated static let suiteName = SelfUpdateIdentity.settingsSuiteName
 
     private enum Key {
         static let scheduledEnabled = "check.schedule.enabled"
@@ -43,13 +51,30 @@ public final class AppSettings: ObservableObject {
 
     /// - Parameter defaults: 注入临时 suite 供测试与截图通道用；默认持久化到固定 suite。
     public init(defaults: UserDefaults? = nil) {
-        let store = defaults ?? UserDefaults(suiteName: Self.suiteName)
-        self.defaults = store ?? .standard
+        // 先定下**真正落盘的那个 store**，再拿它读值。读和写必须走同一个 store——
+        // 早先这里读的是 `store`（未回退的 optional），写的是 `store ?? .standard`，
+        // 于是 suite 被系统拒掉时两边错位：「存得进、读不回」。
+        let resolved = Self.resolveStore(injected: defaults)
+        self.defaults = resolved
 
-        scheduledCheckEnabled = Self.boolValue(in: store, key: Key.scheduledEnabled) ?? true
-        scheduledCheckHour = min(max(Self.intValue(in: store, key: Key.scheduledHour) ?? Self.defaultHour, 0), 23)
-        scheduledCheckMinute = min(max(Self.intValue(in: store, key: Key.scheduledMinute) ?? Self.defaultMinute, 0), 59)
-        notificationsEnabled = Self.boolValue(in: store, key: Key.notificationsEnabled) ?? true
+        scheduledCheckEnabled = Self.boolValue(in: resolved, key: Key.scheduledEnabled) ?? true
+        scheduledCheckHour = min(max(Self.intValue(in: resolved, key: Key.scheduledHour) ?? Self.defaultHour, 0), 23)
+        scheduledCheckMinute = min(max(Self.intValue(in: resolved, key: Key.scheduledMinute) ?? Self.defaultMinute, 0), 59)
+        notificationsEnabled = Self.boolValue(in: resolved, key: Key.notificationsEnabled) ?? true
+    }
+
+    /// 解析出真正落盘的 store。抽成单独的纯函数是为了能被测——`UserDefaults(suiteName:)`
+    /// 返回 nil 那条路（suite 名撞了 bundle id）只在真机上出现，进程内造不出来，
+    /// 所以把「造 suite」这一步做成可注入的。
+    ///
+    /// 退路是 `.standard`：`.app` 形态下它与固定 suite 指向同一个 plist，裸跑形态下
+    /// suite 本身可用、走不到这里。
+    static func resolveStore(
+        injected: UserDefaults? = nil,
+        suiteName: String = AppSettings.suiteName,
+        suiteFactory: (String) -> UserDefaults? = { UserDefaults(suiteName: $0) }
+    ) -> UserDefaults {
+        injected ?? suiteFactory(suiteName) ?? .standard
     }
 
     // MARK: - 值解析
