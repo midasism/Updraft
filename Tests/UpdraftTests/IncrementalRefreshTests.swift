@@ -76,6 +76,7 @@ final class CheckEngineScopeTests: XCTestCase {
             sparkleProbe: probe,
             electronProbe: probe,
             masProbe: probe,
+            gitHubProbe: probe,
             brewOutdated: { tokens in
                 tokenLog.record(tokens)
                 return outdated
@@ -116,6 +117,7 @@ final class CheckEngineScopeTests: XCTestCase {
             makeApp("IINA", source: sparkle),
             makeApp("Bob", source: sparkle),
             makeApp("Xcode", source: .appStore),
+            makeApp("Zed", source: .githubRelease),
             makeApp("Steam", source: .unsupported(reason: "Steam 客户端内更新")),
             makeApp("ngrok", source: .homebrewCask(token: "ngrok"))
         ]
@@ -127,10 +129,10 @@ final class CheckEngineScopeTests: XCTestCase {
         ).check(apps: all)
 
         XCTAssertEqual(Set(results.map(\.app.name)), Set(all.map(\.name)))
-        // v0.3.6 起 App Store 也走网络探测（iTunes Lookup），所以这里是 3 而不是 2。
-        // 断言点名而不只数个数：`unsupported` 与 brew 这两类**不该**发请求这件事
-        // 才是这条用例真正要守的，数个数看不出是谁多发了一次。
-        XCTAssertEqual(Set(log.names), ["IINA", "Bob", "Xcode"], "unsupported 与 brew 都不该发请求")
+        // v0.3.6 起 App Store 走 iTunes Lookup，v0.3.7 起 GitHub 白名单走 Release 查询，
+        // 所以这里是 4 而不是 2。断言点名而不只数个数：`unsupported` 与 brew 这两类
+        // **不该**发请求这件事才是这条用例真正要守的，数个数看不出是谁多发了一次。
+        XCTAssertEqual(Set(log.names), ["IINA", "Bob", "Xcode", "Zed"], "unsupported 与 brew 都不该发请求")
     }
 
     // MARK: - brew 查询收窄
@@ -241,6 +243,7 @@ final class IncrementalRefreshTests: XCTestCase {
             sparkleProbe: probe,
             electronProbe: probe,
             masProbe: probe,
+            gitHubProbe: probe,
             brewOutdated: { _ in [:] },
             concurrency: 4
         )
@@ -542,6 +545,7 @@ final class UpdateStoreRefreshTests: XCTestCase {
             sparkleProbe: probe,
             electronProbe: probe,
             masProbe: probe,
+            gitHubProbe: probe,
             brewOutdated: { _ in [:] },
             concurrency: 4
         )

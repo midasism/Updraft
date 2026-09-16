@@ -12,6 +12,9 @@ public enum AppSource: Hashable, Codable, Sendable {
     case appStore
     /// Microsoft AutoUpdate 管理的应用。v0.1 只标记不检测。
     case microsoftAutoUpdate
+    /// 开源应用，版本查 GitHub Release 白名单（`GitHubReleaseCatalog`）。v0.3.7 起可查版本，
+    /// 但 GitHub 的包没有本工具的签名清单，不能由本工具安装。
+    case githubRelease
     /// 能识别但没有可用的公开更新接口，`reason` 会展示给用户。
     case unsupported(reason: String)
 }
@@ -25,6 +28,7 @@ public extension AppSource {
         case .electron: return "Electron"
         case .appStore: return "App Store"
         case .microsoftAutoUpdate: return "Microsoft"
+        case .githubRelease: return "GitHub"
         case .unsupported: return "未知来源"
         }
     }
@@ -43,6 +47,10 @@ public extension AppSource {
             // v0.3.6 起走 iTunes Lookup 查版本。**只是查得到**，仍然装不了也升不了——
             // 安装按钮停在 `.openDownload`（打开 App Store 页面），由系统负责真正的更新。
             return true
+        case .githubRelease:
+            // v0.3.7 起走 GitHub Release 查版本。同样只查不装——
+            // 安装按钮停在 `.openDownload`（打开 Release 页面），装包是用户自己的事。
+            return true
         case .microsoftAutoUpdate, .unsupported:
             return false
         }
@@ -54,6 +62,7 @@ public extension AppSource {
         case .homebrewCask: return "brew"
         case .sparkle: return "sparkle"
         case .electron: return "electron"
+        case .githubRelease: return "github"
         case .appStore, .microsoftAutoUpdate, .unsupported: return nil
         }
     }

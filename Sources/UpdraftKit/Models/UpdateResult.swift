@@ -106,7 +106,7 @@ public struct AppUpdate: Identifiable, Equatable, Codable, Sendable {
             case .pkg: return .openInstaller
             case .unknown: return .openDownload
             }
-        case .appStore, .microsoftAutoUpdate, .unsupported:
+        case .appStore, .githubRelease, .microsoftAutoUpdate, .unsupported:
             return release.downloadURL != nil ? .openDownload : .manual
         }
     }
