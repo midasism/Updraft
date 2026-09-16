@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# 把 dist/AppUpdater.app 送 Apple 公证，并把票据 staple 到 app 上。
+# 把 dist/Updraft.app 送 Apple 公证，并把票据 staple 到 app 上。
 # 用法：scripts/notarize.sh
 #
 # **没配凭据时不是失败，是跳过**（exit 0）。这样流水线在还没买开发者账号的情况下
@@ -26,7 +26,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-APP="$ROOT/dist/AppUpdater.app"
+APP="$ROOT/dist/Updraft.app"
 
 KEY_ID="${NOTARY_KEY_ID:-}"
 ISSUER_ID="${NOTARY_ISSUER_ID:-}"
@@ -82,7 +82,7 @@ elif [ ! -f "$KEY_PATH" ]; then
 fi
 
 # notarytool 不接受裸 .app，得先打成 zip。必须用 ditto——zip -r 会丢符号链接与权限位。
-SUBMIT_ZIP="$WORK/AppUpdater-notarize.zip"
+SUBMIT_ZIP="$WORK/Updraft-notarize.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$SUBMIT_ZIP"
 
 echo "→ 提交公证（Apple 侧排队，通常几分钟）…"

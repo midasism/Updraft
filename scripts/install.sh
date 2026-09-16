@@ -17,7 +17,9 @@
 set -eu
 
 REPO="midasism/Updraft"
-APP_NAME="AppUpdater"
+APP_NAME="Updraft"
+# v0.3.x 及更早的名字。装完之后顺手把它收进废纸篓，免得一个 App 出现两份。
+LEGACY_APP_NAME="AppUpdater"
 INSTALL_DIR="${INSTALL_DIR:-/Applications}"
 VERSION="${VERSION:-}"
 
@@ -109,7 +111,9 @@ if pgrep -f "$TARGET/Contents/MacOS/$APP_NAME" >/dev/null 2>&1; then
   echo "→ 退出正在运行的旧版本…"
 
   # 优雅退出走 AppleEvent，需要「自动化」权限——首次会弹一次系统授权框，同意即可。
-  osascript -e "tell application id \"com.local.appupdater\" to quit" >/dev/null 2>&1 || true
+  # 新 ID 先试，老 ID 兜底：正在跑的可能是 v0.3.x 装出来的旧包。
+  osascript -e "tell application id \"com.local.updraft\" to quit" >/dev/null 2>&1 \
+    || osascript -e "tell application id \"com.local.appupdater\" to quit" >/dev/null 2>&1 || true
 
   if ! wait_gone 10; then
     # 优雅退出没生效（多半是自动化权限没给，或者弹框没人点）。
@@ -117,7 +121,7 @@ if pgrep -f "$TARGET/Contents/MacOS/$APP_NAME" >/dev/null 2>&1; then
     # 下次启动会收拾残留的中间态文件，所以这里不会留下不可恢复的烂摊子。
     echo "  优雅退出没生效，改用 SIGTERM…"
     pkill -TERM -f "$TARGET/Contents/MacOS/$APP_NAME" >/dev/null 2>&1 || true
-    wait_gone 10 || die "旧版本没退干净，请手动退出「App 更新」后重跑"
+    wait_gone 10 || die "旧版本没退干净，请手动退出「Updraft」后重跑"
   fi
 fi
 
@@ -156,4 +160,25 @@ fi
 
 echo ""
 echo "✔ Updraft $INSTALLED_VERSION 已装到 $TARGET"
+
+# ---- 收尾：把改名前的旧包收进废纸篓 ----
+# v0.3.x 装出来的目录叫 AppUpdater.app。不处理的话，一个应用会同时存在两份，
+# 用户下次看到的还是旧的图标和名字。进废纸篓而不是直接删——后悔了还能捞回来。
+LEGACY="$INSTALL_DIR/$LEGACY_APP_NAME.app"
+if [ -d "$LEGACY" ] && [ "$LEGACY" != "$TARGET" ]; then
+  TRASH="$HOME/.Trash"
+  mkdir -p "$TRASH" 2>/dev/null || true
+  TRASH_DEST="$TRASH/$LEGACY_APP_NAME.app"
+  n=1
+  while [ -e "$TRASH_DEST" ]; do
+    TRASH_DEST="$TRASH/$LEGACY_APP_NAME $n.app"
+    n=$((n + 1))
+  done
+  if mv "$LEGACY" "$TRASH_DEST" 2>/dev/null; then
+    echo "→ 旧版 $LEGACY_APP_NAME.app 已移入废纸篓（改名前的遗留）"
+  else
+    echo "⚠︎  旧版还在：$LEGACY —— 请手动删掉，否则会出现两个 Updraft"
+  fi
+fi
+
 open "$TARGET"

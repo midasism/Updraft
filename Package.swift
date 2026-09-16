@@ -2,25 +2,25 @@
 import PackageDescription
 
 let package = Package(
-    name: "AppUpdater",
+    name: "Updraft",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "AppUpdater", targets: ["AppUpdater"])
+        .executable(name: "Updraft", targets: ["Updraft"])
     ],
     targets: [
         .target(
-            name: "AppUpdaterKit",
-            path: "Sources/AppUpdaterKit"
+            name: "UpdraftKit",
+            path: "Sources/UpdraftKit"
         ),
         .executableTarget(
-            name: "AppUpdater",
-            dependencies: ["AppUpdaterKit"],
-            path: "Sources/AppUpdater"
+            name: "Updraft",
+            dependencies: ["UpdraftKit"],
+            path: "Sources/Updraft"
         ),
         .testTarget(
-            name: "AppUpdaterTests",
-            dependencies: ["AppUpdaterKit"],
-            path: "Tests/AppUpdaterTests"
+            name: "UpdraftTests",
+            dependencies: ["UpdraftKit"],
+            path: "Tests/UpdraftTests"
         )
     ]
 )
