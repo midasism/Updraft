@@ -10,3 +10,4 @@ public protocol UpdateProbing: Sendable {
 
 extension SparkleProbe: UpdateProbing {}
 extension ElectronProbe: UpdateProbing {}
+extension MASProbe: UpdateProbing {}

@@ -75,6 +75,7 @@ final class CheckEngineScopeTests: XCTestCase {
         return CheckEngine(
             sparkleProbe: probe,
             electronProbe: probe,
+            masProbe: probe,
             brewOutdated: { tokens in
                 tokenLog.record(tokens)
                 return outdated
@@ -126,7 +127,10 @@ final class CheckEngineScopeTests: XCTestCase {
         ).check(apps: all)
 
         XCTAssertEqual(Set(results.map(\.app.name)), Set(all.map(\.name)))
-        XCTAssertEqual(log.count, 2, "不该为不需要网络的来源发请求")
+        // v0.3.6 起 App Store 也走网络探测（iTunes Lookup），所以这里是 3 而不是 2。
+        // 断言点名而不只数个数：`unsupported` 与 brew 这两类**不该**发请求这件事
+        // 才是这条用例真正要守的，数个数看不出是谁多发了一次。
+        XCTAssertEqual(Set(log.names), ["IINA", "Bob", "Xcode"], "unsupported 与 brew 都不该发请求")
     }
 
     // MARK: - brew 查询收窄
@@ -236,6 +240,7 @@ final class IncrementalRefreshTests: XCTestCase {
         let engine = CheckEngine(
             sparkleProbe: probe,
             electronProbe: probe,
+            masProbe: probe,
             brewOutdated: { _ in [:] },
             concurrency: 4
         )
@@ -536,6 +541,7 @@ final class UpdateStoreRefreshTests: XCTestCase {
         return CheckEngine(
             sparkleProbe: probe,
             electronProbe: probe,
+            masProbe: probe,
             brewOutdated: { _ in [:] },
             concurrency: 4
         )
