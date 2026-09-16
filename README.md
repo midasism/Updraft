@@ -477,7 +477,7 @@ Sources/AppUpdaterKit/
                SelfUpdateSheet（本工具自更新确认与进度）
   CLI/         --check / --refresh / --job / --plan / --install / --recover / --self-check / --self-install / --snapshot
 Sources/AppUpdater/main.swift   可执行入口
-Tests/AppUpdaterTests/          150+ 个单元测试
+Tests/AppUpdaterTests/          244 个单元测试 / 32 个套件（1 条真机用例默认跳过）
 ```
 
 分层的关键约束：**检测逻辑不认识 UI，UI 不认识网络**。定时检查也守这条：`CheckPlanner`（Core）只回答「现在该不该查」，`UpdateWatcher`（UI）只管计时与唤醒监听，真正查的时候永远调 `UpdateStore.check()`——探测仍然只有 `CheckEngine` 一条路，没有第二套逻辑。
