@@ -785,3 +785,60 @@ final class InstallerHelpersTests: XCTestCase {
         XCTAssertFalse(normal.warnings.contains { $0.contains("可能不是完整包") })
     }
 }
+
+/// 「全部升级」只该动传进来的那批。
+///
+/// 这条边界靠读代码守不住：搜索框有词时，参数传错的话用户筛出 1 个却升了全量，
+/// 而界面上一个提示都不会有。
+final class AutomatedCandidateTests: XCTestCase {
+    private func update(_ name: String, source: AppSource, result: UpdateResult) -> AppUpdate {
+        let app = AppInfo(
+            name: name,
+            bundleID: "com.example.\(name.lowercased())",
+            path: URL(fileURLWithPath: "/Applications/\(name).app"),
+            currentVersion: "1.0",
+            buildVersion: nil,
+            source: source
+        )
+        return AppUpdate(app: app, result: result)
+    }
+
+    private func available() -> UpdateResult {
+        .updateAvailable(
+            ReleaseInfo(version: "2.0", downloadURL: URL(string: "https://example.com/A.dmg")!)
+        )
+    }
+
+    func testOnlyAutoInstallableEntriesArePicked() {
+        let batch = [
+            update("Sparkle 可换包", source: .sparkle(feedURL: nil), result: available()),
+            update("仓库里的", source: .homebrewCask(token: "x"), result: available()),
+            update("已是最新", source: .sparkle(feedURL: nil), result: .upToDate(latest: "1.0")),
+            update("AppStore 的", source: .appStore, result: available())
+        ]
+
+        XCTAssertEqual(
+            UpdateStore.automatedCandidates(in: batch).map(\.app.name),
+            ["Sparkle 可换包", "仓库里的"],
+            "已是最新与 App Store 的都不该进批量任务"
+        )
+    }
+
+    func testEmptyInputYieldsEmptySelection() {
+        XCTAssertTrue(UpdateStore.automatedCandidates(in: []).isEmpty)
+    }
+
+    func testPkgOnlyEntryIsNotAutomated() {
+        let pkg = update(
+            "pkg 应用",
+            source: .sparkle(feedURL: nil),
+            result: .updateAvailable(
+                ReleaseInfo(version: "2.0", downloadURL: URL(string: "https://example.com/A.pkg")!)
+            )
+        )
+        XCTAssertTrue(
+            UpdateStore.automatedCandidates(in: [pkg]).isEmpty,
+            ".pkg 需要管理员密码，只能交给系统安装器"
+        )
+    }
+}

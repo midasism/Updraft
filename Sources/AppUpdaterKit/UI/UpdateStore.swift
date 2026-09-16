@@ -106,11 +106,6 @@ public final class UpdateStore: ObservableObject {
     public var upToDateCount: Int { updates(in: .upToDate).count }
     public var unsupportedCount: Int { updates(in: .unsupported).count }
 
-    /// 能由本工具自己走完安装的条目数，决定「全部升级」按钮是否出现。
-    public var automatedUpdateCount: Int {
-        updates(in: .updateAvailable).filter { $0.installAction.isAutomated }.count
-    }
-
     public var lastCheckedText: String {
         guard let lastChecked else { return "尚未检查" }
         let elapsed = Date().timeIntervalSince(lastChecked)
@@ -275,14 +270,36 @@ public final class UpdateStore: ObservableObject {
         job = UpgradeJob(items: [item])
     }
 
-    /// 全部升级：把所有能自动完成的条目合成一个任务，顺序执行。
-    public func requestUpgradeAll() {
+    /// 全部升级：把能自动完成的条目合成一个任务，顺序执行。
+    ///
+    /// - Parameter visible: 界面当前筛出来的那批。传 nil 表示没有筛选，对全量生效。
+    ///   搜索框有词时必须传它——否则用户筛出 1 个再点「升级这 1 个」，
+    ///   结果升的是全量二十几个，而他一个都没看见。
+    public func requestUpgradeAll(visible: [AppUpdate]? = nil) {
         guard job?.isRunning != true else { return }
-        let items = updates(in: .updateAvailable)
-            .compactMap { makeItem(from: $0) }
-            .filter(\.isAutomated)
+        // 守卫判的是 compactMap 之后的结果，而不是它之前的 `candidates`。两者当前
+        // 等价（见 automatedCandidates 的说明），但判前者这层就没法被绕过：将来谁
+        // 给 InstallAction 加一个 isAutomated 却生成不出 item 的情形，这里会安静地
+        // 什么都不做，而不是弹出一个空的升级面板。
+        let items = Self.automatedCandidates(in: visible ?? updates).compactMap { makeItem(from: $0) }
         guard !items.isEmpty else { return }
         job = UpgradeJob(items: items)
+    }
+
+    /// 从一批条目里挑出本工具能自己走完安装的那些。
+    ///
+    /// 抽成静态纯函数是为了能被断言：`updates` 是 `private(set)`，且填充它要跑真实
+    /// 扫描，测试里造不出来。而「只升传进来的这批」恰恰是最需要守住的边界，
+    /// 不能只靠读代码相信。
+    ///
+    /// `nonisolated` 不是随手加的：这函数只碰自己的入参，不读任何 actor 状态。少了它，
+    /// 非 MainActor 的调用方（XCTest 用例、CLI）就没法同步调它，只能加 `await` 或者
+    /// 把谓词再抄一遍——两条路都比这行注解糟。
+    ///
+    /// 返回值全部是 `.updateAvailable`（`installAction` 只在这种情况下才不是 `.manual`），
+    /// 所以 `makeItem` 目前不会丢掉其中任何一条。
+    public nonisolated static func automatedCandidates(in updates: [AppUpdate]) -> [AppUpdate] {
+        updates.filter { $0.installAction.isAutomated }
     }
 
     private func makeItem(from update: AppUpdate) -> UpgradeJob.Item? {

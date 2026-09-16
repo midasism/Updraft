@@ -34,7 +34,9 @@ public enum SnapshotRunner {
     public static func run(
         outputPath: String,
         mode: Mode = .main,
-        size: NSSize? = nil
+        size: NSSize? = nil,
+        /// 初始筛选词。只有截图通道用，生产路径走默认空值。
+        query: String = ""
     ) -> Int32 {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -76,7 +78,7 @@ public enum SnapshotRunner {
         let root: AnyView
         switch mode {
         case .main:
-            root = AnyView(ContentView(store: store))
+            root = AnyView(ContentView(store: store, initialQuery: query))
         case .confirm, .batch, .running, .cancelled:
             if flag.jobPrepared {
                 root = AnyView(UpgradeSheet(store: store))

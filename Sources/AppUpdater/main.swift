@@ -77,7 +77,10 @@ if arguments.contains("--self-install") {
 if let index = arguments.firstIndex(of: "--snapshot") {
     let path = index + 1 < arguments.count ? arguments[index + 1] : "app-snapshot.png"
     let mode = value(after: "--mode").flatMap(SnapshotRunner.Mode.init(rawValue:)) ?? .main
-    let code = MainActor.assumeIsolated { SnapshotRunner.run(outputPath: path, mode: mode) }
+    let query = value(after: "--query") ?? ""
+    let code = MainActor.assumeIsolated {
+        SnapshotRunner.run(outputPath: path, mode: mode, query: query)
+    }
     exit(code)
 }
 
