@@ -17,7 +17,7 @@ public struct CheckEngine: Sendable {
     private let brewOutdated: BrewOutdatedSource
     private let concurrency: Int
 
-    public init(client: HTTPClient = HTTPClient(), concurrency: Int = 8) {
+    public init(client: HTTPClient = .shared, concurrency: Int = 8) {
         self.init(
             sparkleProbe: SparkleProbe(client: client),
             electronProbe: ElectronProbe(client: client),
