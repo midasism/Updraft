@@ -37,7 +37,7 @@ jobs:
       - name: Swift 版本
         run: swift --version
 
-      # swift test 会构建整个包（含可执行目标 AppUpdater），编译与测试一步覆盖，无需单独的 Debug 构建
+      # swift test 会构建整个包（含可执行目标 Updraft），编译与测试一步覆盖，无需单独的 Debug 构建
       - name: 单元测试
         run: swift test --disable-sandbox
 

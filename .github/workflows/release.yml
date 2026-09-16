@@ -107,7 +107,7 @@ jobs:
           DMG: ${{ steps.meta.outputs.dmg }}
         run: |
           # 必须是 ditto：zip -r 会丢掉 .app 内部的符号链接与权限位，解压后包是坏的
-          ditto -c -k --sequesterRsrc --keepParent dist/AppUpdater.app "$ZIP"
+          ditto -c -k --sequesterRsrc --keepParent dist/Updraft.app "$ZIP"
 
           # 两个包收进同一个目录再算校验和，SHA256SUMS.txt 里才能是裸文件名——
           # 用户把三个文件下到同一个文件夹后，shasum -a 256 -c 才直接可用

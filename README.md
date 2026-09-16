@@ -27,7 +27,9 @@ macOS 没有统一的应用更新入口。App Store 管一批，Homebrew 管一�
 Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫描 122 个应用，检出 22 个有待更新**，全量检查 9.0–10.6 秒；升完一个应用后只重查那一个，**0.3–0.9 秒**出新状态。
 
 > [!NOTE]
-> 仓库叫 **Updraft**，编译产物与 `.app` 叫 **AppUpdater**，界面标题是「App 更新」——三个名字指同一个东西。后文涉及可执行文件路径时用的是 `AppUpdater`。
+> 从 v0.4 起，仓库、产物、Bundle ID 与界面标题统一叫 **Updraft**。v0.3.x 及更早叫 **AppUpdater**——
+> 老版本升级时会自动把安装目录改成 `Updraft.app`，并把旧目录（备份、状态、设置）搬过来，
+> 不需要手动重装。
 
 ## 目录
 
@@ -136,7 +138,7 @@ curl -fsSL https://raw.githubusercontent.com/midasism/Updraft/main/scripts/insta
   <img src="docs/screenshots/dmg-window.png" width="560" alt="DMG 安装窗口：把应用拖进「应用程序」">
 </p>
 
-也可以下载 `Updraft-x.y.z-macOS.zip`，解压后把 `AppUpdater.app` 拖进 `/Applications`——两者内容一致，DMG 只是多了一层拖拽窗口。
+也可以下载 `Updraft-x.y.z-macOS.zip`，解压后把 `Updraft.app` 拖进 `/Applications`——两者内容一致，DMG 只是多了一层拖拽窗口。
 
 > [!IMPORTANT]
 > 安装包只做了临时签名（ad-hoc），**没有走 Apple 公证**，所以从浏览器下载后首次打开会被 Gatekeeper 拦下，弹「Apple 无法验证…」（只有「完成」和「移到废纸篓」两个按钮）。
@@ -148,7 +150,7 @@ curl -fsSL https://raw.githubusercontent.com/midasism/Updraft/main/scripts/insta
 > **① 终端一条命令（最快）**
 >
 > ```bash
-> xattr -dr com.apple.quarantine /Applications/AppUpdater.app
+> xattr -dr com.apple.quarantine /Applications/Updraft.app
 > ```
 >
 > 之后双击即可打开。（提示权限不足就在前面加 `sudo`。）
@@ -156,7 +158,7 @@ curl -fsSL https://raw.githubusercontent.com/midasism/Updraft/main/scripts/insta
 > **② 走系统设置**
 >
 > 先双击一次，让它被拦下——这一步不能省，那个按钮只会因为一次失败的启动而出现。然后打开
-> **系统设置 → 隐私与安全性 → 安全性**，找到「已阻止使用"AppUpdater"…」那一行，点 **仍要打开**，输密码确认。
+> **系统设置 → 隐私与安全性 → 安全性**，找到「已阻止使用"Updraft"…」那一行，点 **仍要打开**，输密码确认。
 >
 > ⚠️ 这个按钮只在被拦后约 1 小时内出现，且没有任何倒计时提示。找不到它就重新双击一次，再回设置页。
 >
@@ -176,8 +178,8 @@ curl -fsSL https://raw.githubusercontent.com/midasism/Updraft/main/scripts/insta
 ```bash
 git clone https://github.com/midasism/Updraft.git
 cd Updraft
-scripts/build-app.sh        # 编译 release，组装成 dist/AppUpdater.app
-open dist/AppUpdater.app
+scripts/build-app.sh        # 编译 release，组装成 dist/Updraft.app
+open dist/Updraft.app
 ```
 
 要出和 Release 里一样的 DMG：
@@ -196,7 +198,7 @@ VERSION=0.3.0 scripts/build-dmg.sh     # 出 dist/Updraft-0.3.0-macOS.dmg
 启动后自动检查一次，工具栏的「重新检查」可手动触发。检测逻辑与界面共用同一套代码，所以下面这些命令行入口看到的结果和窗口里完全一致：
 
 ```bash
-AU="dist/AppUpdater.app/Contents/MacOS/AppUpdater"
+AU="dist/Updraft.app/Contents/MacOS/Updraft"
 
 $AU --check                  # 打印完整检测结果
 $AU --self-check             # 检查本工具自己有没有新版本
@@ -241,10 +243,10 @@ NSUnbufferedIO=YES nohup "$AU" --job "IINA" >/tmp/updraft.log 2>&1 &
 - **每日定时检查**（设置里可开关、可改时刻，默认每天 10:00）：到点在后台跑全量检查；合盖、关机错过的时段，唤醒/启动后补查一次；**当天查过（不管手动还是自动）就不重复**；
 - **系统通知**：后台检查发现可更新应用时弹出，点按打开主窗口。你在主窗口里看到的检查结果不会再弹通知（看着结果还弹是打扰）；通知权限被系统拒掉后安静跳过，状态照旧能从菜单栏看到。
 
-设置从三个入口到达：主窗口右上角齿轮、菜单栏「设置…」、⌘,。持久化在 UserDefaults 固定 suite（`com.local.appupdater`），裸跑可执行文件与 `.app` 包读到的是同一份。
+设置从三个入口到达：主窗口右上角齿轮、菜单栏「设置…」、⌘,。持久化在 UserDefaults 固定 suite（`com.local.updraft`），裸跑可执行文件与 `.app` 包读到的是同一份。
 
 > [!NOTE]
-> 系统通知依赖 UserNotifications，需要进程有 bundle identifier——`dist/AppUpdater.app` 没问题；`swift run` 直接裸跑可执行文件时通知整体退化为 no-op（一碰 UNUserNotificationCenter 就会崩，代码里按 bundle 探测跳过了），菜单栏与定时检查不受影响。
+> 系统通知依赖 UserNotifications，需要进程有 bundle identifier——`dist/Updraft.app` 没问题；`swift run` 直接裸跑可执行文件时通知整体退化为 no-op（一碰 UNUserNotificationCenter 就会崩，代码里按 bundle 探测跳过了），菜单栏与定时检查不受影响。
 
 ## 工作原理
 
@@ -372,7 +374,7 @@ Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但
 
 ## 备份与恢复
 
-旧版本备份到 `~/Library/Application Support/AppUpdater/Backups/<Bundle ID>/<时间戳>-<版本>/`，每个应用只保留最近 1 份（IINA 一个包就 104 MB，无限留存会变成磁盘黑洞）。
+旧版本备份到 `~/Library/Application Support/Updraft/Backups/<Bundle ID>/<时间戳>-<版本>/`，每个应用只保留最近 1 份（IINA 一个包就 104 MB，无限留存会变成磁盘黑洞）。
 
 即便如此，一个机器上备份攒到 GB 级很常见（本机实测 1.7 GB / 10 个应用）。所以设置页把它量给你看，并给了一个清空入口：
 
@@ -420,7 +422,7 @@ CI 在 `macos-latest` 上跑 `swift build`（Debug + Release）与 `swift test`�
 
 | 脚本 | 产出 |
 |---|---|
-| `scripts/build-app.sh` | `dist/AppUpdater.app`——编译 release、组装 bundle、签名 |
+| `scripts/build-app.sh` | `dist/Updraft.app`——编译 release、组装 bundle、签名 |
 | `scripts/notarize.sh` | 送上面那个 `.app` 去 Apple 公证并 staple 票据（没配凭据就跳过） |
 | `scripts/build-dmg.sh` | `dist/Updraft-<版本>-macOS.dmg`——调前者出 `.app`，再套一层拖拽安装窗口 |
 
@@ -463,7 +465,7 @@ DMG 用 [dmgbuild](https://github.com/dmgbuild/dmgbuild) 而不是 `hdiutil` + A
 ### 目录结构
 
 ```
-Sources/AppUpdaterKit/
+Sources/UpdraftKit/
   Models/      AppInfo / AppSource / UpdateResult / ReleaseInfo / UpgradeJob —— 纯数据
   Core/        扫描、分类、版本比对、进程执行、缓存、检查编排
                UpdateProbing（探针协议）/ IncrementalChecker（增量刷新与合并）
@@ -476,8 +478,8 @@ Sources/AppUpdaterKit/
                UpdateWatcher（调度运行时）/ UpdateNotifier（系统通知）
                SelfUpdateSheet（本工具自更新确认与进度）
   CLI/         --check / --refresh / --job / --plan / --install / --recover / --self-check / --self-install / --snapshot
-Sources/AppUpdater/main.swift   可执行入口
-Tests/AppUpdaterTests/          244 个单元测试 / 32 个套件（1 条真机用例默认跳过）
+Sources/Updraft/main.swift   可执行入口
+Tests/UpdraftTests/          244 个单元测试 / 32 个套件（1 条真机用例默认跳过）
 ```
 
 分层的关键约束：**检测逻辑不认识 UI，UI 不认识网络**。定时检查也守这条：`CheckPlanner`（Core）只回答「现在该不该查」，`UpdateWatcher`（UI）只管计时与唤醒监听，真正查的时候永远调 `UpdateStore.check()`——探测仍然只有 `CheckEngine` 一条路，没有第二套逻辑。
@@ -496,7 +498,7 @@ Tests/AppUpdaterTests/          244 个单元测试 / 32 个套件（1 条真机
 - **纯逻辑单测** — 版本比对（边界：相等、递增整数 vs 点分、空值、后缀）、appcast XML 解析、`app-update.yml` 解析，用真实抓取的 XML 片段做 fixture。
 - **扫描器测试** — 对临时构造的伪 `.app` 目录树断言分类结果。
 - **探针测试** — 注入 stub HTTP 客户端，覆盖 200 / 404 / 超时 / 畸形 XML 四条路径。
-- **自更新** — GitHub Releases 三态与 404 / 403 / 超时 / 畸形 JSON；清单 Ed25519 通过 / 篡改 zip / 换公钥必须失败；缺公钥或缺清单标「未校验」；换包中断后 `.AppUpdater.*.old.app` 自愈。
+- **自更新** — GitHub Releases 三态与 404 / 403 / 超时 / 畸形 JSON；清单 Ed25519 通过 / 篡改 zip / 换公钥必须失败；缺公钥或缺清单标「未校验」；换包中断后 `.Updraft.*.old.app` 自愈。
 - **重点回归** — appcast 增量补丁 7 条、签名校验 6 条（真实 Ed25519 密钥对签名通过、篡改一个字节必须失败、换公钥必须失败、缺公钥判“跳过”而非失败）、中断恢复 10 条。
 - **调度与当日去重** — `CheckPlanner` 全部注入合成时刻（到点/未到/错过/已查过/已触发过/跨天），`UpdateWatcher.tick(now:)` 注入时钟断言「一天只触发一次、跨天再触发」，不真等时间。
 - **设置持久化** — 临时 UserDefaults suite 进出，覆盖默认值、写读回路、越界钳制与文案。

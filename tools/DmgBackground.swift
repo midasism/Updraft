@@ -3,7 +3,7 @@ import Foundation
 
 // 生成 DMG 安装窗口的背景图。用法：swift tools/DmgBackground.swift <输出目录>
 //
-// 这个窗口的布局是死的：左边 AppUpdater.app，右边 Applications 软链，中间一个指向右的箭头。
+// 这个窗口的布局是死的：左边 Updraft.app，右边 Applications 软链，中间一个指向右的箭头。
 // **箭头和说明文字都得画进背景图里**——Finder 只负责画图标和图标下面的文件名，它不会替你
 // 画箭头。所以这里的像素尺寸必须和 scripts/dmg-settings.py 里的 window_rect / icon_locations
 // 严格对应，错一个数箭头就和图标对不齐。

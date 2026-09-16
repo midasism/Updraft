@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# 把 AppUpdater.app 打成一个带「拖拽安装」窗口的 DMG。
+# 把 Updraft.app 打成一个带「拖拽安装」窗口的 DMG。
 # 用法：scripts/build-dmg.sh
 #       VERSION=0.3.0 scripts/build-dmg.sh
 #
@@ -16,7 +16,7 @@ cd "$ROOT"
 VERSION="${VERSION:-0.1.0}"
 DMGBUILD_VERSION="1.6.7"
 DIST="$ROOT/dist"
-APP="$DIST/AppUpdater.app"
+APP="$DIST/Updraft.app"
 DMG="$DIST/Updraft-$VERSION-macOS.dmg"
 VOLUME_NAME="Updraft"
 VENV="$ROOT/.build/dmgbuild-venv"

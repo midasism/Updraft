@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-// 生成 AppUpdater 的图标集。用法：swift tools/IconGen.swift <输出目录>
+// 生成 Updraft 的图标集。用法：swift tools/IconGen.swift <输出目录>
 //
 // 设计概念「Updraft · 上升气流」：
 //   主图形 = 一枚圆润的白色向上箭头（升级），下方两条逐渐变淡的气流托带（上升气流），

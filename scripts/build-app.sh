@@ -14,18 +14,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-APP_NAME="AppUpdater"
-DISPLAY_NAME="App 更新"
-BUNDLE_ID="com.local.appupdater"
+APP_NAME="Updraft"
+DISPLAY_NAME="Updraft"
+BUNDLE_ID="com.local.updraft"
 # 版本号可由外部注入（发布流水线按 tag 传入），本地直接跑则用默认值。
 VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 DIST="$ROOT/dist"
 APP="$DIST/$APP_NAME.app"
-# 与 Sources/AppUpdaterKit/Core/SelfUpdateIdentity.swift 的 publicEDKey 同源，改一处即可。
+# 与 Sources/UpdraftKit/Core/SelfUpdateIdentity.swift 的 publicEDKey 同源，改一处即可。
 SU_PUBLIC_ED_KEY="$(python3 - <<'PY'
 import re, pathlib
-text = pathlib.Path("Sources/AppUpdaterKit/Core/SelfUpdateIdentity.swift").read_text()
+text = pathlib.Path("Sources/UpdraftKit/Core/SelfUpdateIdentity.swift").read_text()
 m = re.search(r'public static let publicEDKey = "([^"]+)"', text)
 print(m.group(1) if m else "")
 PY
