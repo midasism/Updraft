@@ -39,7 +39,9 @@ struct SelfUpdateSheet: View {
             return store.selfInstallProgress.map { "\($0.phase.title) — \($0.detail)" } ?? "正在升级…"
         }
         if let report = store.selfInstallReport {
-            return report.succeeded ? "已升级，即将打开新版本" : "升级未完成"
+            return report.succeeded
+                ? (report.relaunched ? "已升级，即将打开新版本" : "已升级，请手动打开新版本")
+                : "升级未完成"
         }
         if store.isCheckingSelf { return "正在检查…" }
         switch store.selfStatus {
@@ -179,9 +181,14 @@ struct SelfUpdateSheet: View {
                 Text(report.signature.summary)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                Text("即将打开新版本并退出当前窗口。")
+                // 新版本没拉起来时不说"即将打开"：此刻进程不会退出（见 installSelfUpdate），
+                // 界面得如实交代用户下一步要做什么。
+                Text(report.relaunched
+                    ? "即将打开新版本并退出当前窗口。"
+                    : "新版本没能自动打开，请手动打开；确认无误后可以退出当前窗口。")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Label(report.error ?? "升级失败", systemImage: "xmark.circle.fill")
                     .font(.system(size: 13, weight: .medium))

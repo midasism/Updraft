@@ -401,7 +401,8 @@ public struct Installer: Sendable {
             report.installedPath = app.path
 
             // ── 收尾：重新打开 + 清理旧备份 ──
-            // 自更新总是拉起新实例，由它在下次启动时清 `.old`。
+            // 自更新总是拉起新实例，由它在下次启动时清 `.old`。注意此刻**本进程还活着**
+            // （skipQuit），所以这一步必须用能强开新实例的方式，见 `relaunchCommand`。
             if wasRunning || options.alwaysRelaunch {
                 emit(.relaunching, "正在重新打开 \(app.name)…")
                 report.relaunched = await Self.launch(app.path)
@@ -823,10 +824,25 @@ public struct Installer: Sendable {
         )
     }
 
+    /// 拉起刚换上去的新版本。
+    ///
+    /// **必须带 `-n`（另开一个实例）。** 自替换的场景里本进程还在跑，同 bundle id 的实例对
+    /// LaunchServices 来说"已经在运行"，`NSWorkspace.open` 只会把它激活——2026-09-16 实测：
+    /// 它返回 `true`，但进程数一个都没多，于是「自动打开新版本」静默失效，用户只看到旧窗口
+    /// 还杵在那儿。对照组同样实测过：`NSWorkspace.openApplication(createsNewApplicationInstance:)`
+    /// 与 `/usr/bin/open -n` 都能真正起第二个实例。
+    ///
+    /// 这里选 `open` 而不是那个 NSWorkspace 重载，是因为它不依赖 AppKit 主线程
+    /// （CLI 入口用信号量堵住主线程时，`MainActor.run` 会自锁），而且退出码是真信号：
+    /// 拉不起来会返回非零，界面能把"已升级但没能自动打开"如实说出来。
+    static func relaunchCommand(for app: URL) -> (executable: String, arguments: [String]) {
+        ("/usr/bin/open", ["-n", app.path])
+    }
+
     static func launch(_ app: URL) async -> Bool {
-        await MainActor.run {
-            NSWorkspace.shared.open(app)
-        }
+        let command = relaunchCommand(for: app)
+        let result = await ProcessRunner.run(executable: command.executable, arguments: command.arguments)
+        return result.succeeded
     }
 
     // MARK: - 文件系统小工具

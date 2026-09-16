@@ -559,7 +559,8 @@ public final class UpdateStore: ObservableObject {
         isSelfUpdatePresented = false
     }
 
-    /// 下载 → 验签 → 换自己 → 拉起新实例。成功后由界面退出当前进程。
+    /// 下载 → 验签 → 换自己 → 拉起新实例 → 收起面板 → 退出当前进程。
+    /// 最后两步不能颠倒，也不能省：新版本没拉起来就不退出（见下）。
     public func installSelfUpdate() async {
         guard !isInstallingSelf else { return }
         guard case .updateAvailable(let release) = selfStatus else { return }
@@ -592,11 +593,16 @@ public final class UpdateStore: ObservableObject {
         selfInstallReport = report
         isInstallingSelf = false
 
-        if report.succeeded {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                NSApp.terminate(nil)
-            }
-        }
+        guard report.succeeded else { return }
+
+        // 新版本没拉起来就别退出：留在旧进程里至少还有得用，结果页会写明"没能自动打开新版本"。
+        guard report.relaunched else { return }
+
+        // 退出之前**必须先收起面板**：sheet 还挂着时 `NSApp.terminate` 是空操作
+        // （模态会话把它吞了，既不问 delegate 也不退出），这就是"升级完不自动退出、
+        // 得手动关闭才行"的根因。详见 SelfQuit 里的对照表。
+        isSelfUpdatePresented = false
+        SelfQuit.schedule()
     }
 
     public func selfUpdatePlan() -> Installer.Plan? {
