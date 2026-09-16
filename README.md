@@ -27,9 +27,17 @@ macOS 没有统一的应用更新入口。App Store 管一批，Homebrew 管一�
 Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫描 122 个应用，检出 22 个有待更新**，全量检查 9.0–10.6 秒；升完一个应用后只重查那一个，**0.3–0.9 秒**出新状态。
 
 > [!NOTE]
-> 从 **v0.3.4** 起，仓库、产物、Bundle ID 与界面标题统一叫 **Updraft**；**v0.3.3 及更早**叫 **AppUpdater**——
-> 老版本升级时会自动把安装目录改成 `Updraft.app`，并把旧目录（备份、状态、设置）搬过来，
-> 不需要手动重装。
+> 从 **v0.3.4** 起，仓库、产物、Bundle ID 与界面标题统一叫 **Updraft**；**v0.3.3 及更早**叫 **AppUpdater**。
+>
+> ⚠️ **v0.3.3 及更早的用户需要手动重新安装一次**（下载 DMG 或 zip 覆盖安装，见[安装](#安装)）。
+> 改名顺带换了 Bundle ID，而老版本的自更新会拿包内 Bundle ID 跟目标应用比对、不一致就拒绝安装，
+> 所以老版本**升不到** v0.3.4+，报错是「安装包的 Bundle ID 是 `com.local.updraft`，与目标应用
+> `com.local.appupdater` 不一致」。
+>
+> 装完 v0.3.4+ 就不用再管了：首次启动会自动把 `~/Library/Application Support` 与
+> `~/Library/Caches` 下的旧目录、以及老设置搬到新名字；换包时目录若还叫 `AppUpdater.app`，
+> 也会顺手改成 `Updraft.app`；此后自更新恢复正常。装完请把 `/Applications/AppUpdater.app` 删掉，
+> 别留两份。
 
 ## 目录
 
