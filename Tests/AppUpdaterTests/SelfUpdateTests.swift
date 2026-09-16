@@ -399,6 +399,21 @@ final class SelfUpdateRecoveryTests: XCTestCase {
         XCTAssertTrue(report.removedArtifacts.isEmpty)
         XCTAssertEqual(report.needsAttention.count, 1)
     }
+
+    /// 「自动打开新版本」必须真的能开第二个实例。
+    ///
+    /// 自替换时本进程还在跑，而同 bundle id 的实例对 LaunchServices 来说"已经在运行"，
+    /// 于是 `NSWorkspace.open` 只做激活、不启新进程——2026-09-16 真机实测：它返回 `true`、
+    /// 进程数一个都没多，升级看起来完成了但用户面前还是那个旧窗口。
+    ///
+    /// 所以这条断言的是"必须带 `-n`"，不是"调了 open"。写成测试是因为它正是踩过的坑：
+    /// 将来谁把 `launch` 改回 `NSWorkspace.open`，这里会红。
+    func testRelaunchForcesNewInstanceInsteadOfActivatingRunningOne() {
+        let app = URL(fileURLWithPath: "/Applications/AppUpdater.app")
+        let command = Installer.relaunchCommand(for: app)
+        XCTAssertEqual(command.executable, "/usr/bin/open")
+        XCTAssertEqual(command.arguments, ["-n", "/Applications/AppUpdater.app"])
+    }
 }
 
 final class SelfUpdateIdentityTests: XCTestCase {
