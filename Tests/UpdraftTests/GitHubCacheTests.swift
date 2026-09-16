@@ -110,10 +110,13 @@ final class GitHubCacheTTLTests: XCTestCase {
         XCTAssertEqual(calls.count, 2)
     }
 
-    func testTTLIsMeasuredFromSavedAtNotEpoch() async throws {
-        // 边界：恰好等于 TTL 时仍未过期（实现用的严格小于）。
+    func testExactTTLBoundaryIsExpired() async throws {
+        // 边界语义（实现用严格小于）：恰好等于 TTL 就算过期，回去重验证。
         let clock = CacheClock()
-        let http = RecordingHTTP(steps: [.init(200, etag: #""v1""#, releaseBody(tag: "v11.6.1"))])
+        let http = RecordingHTTP(steps: [
+            .init(200, etag: #""v1""#, releaseBody(tag: "v11.6.1")),
+            .init(304, ""),
+        ])
         let client = makeClient(http, clock: clock)
 
         _ = try await client.get(cacheURL)
@@ -121,7 +124,8 @@ final class GitHubCacheTTLTests: XCTestCase {
         _ = try await client.get(cacheURL)
 
         let calls = await http.calls
-        XCTAssertEqual(calls.count, 1, "恰好到 TTL 边界仍算新鲜")
+        XCTAssertEqual(calls.count, 2, "恰好到 TTL 边界应判过期并发条件请求")
+        XCTAssertEqual(calls[1].ifNoneMatch, #""v1""#)
     }
 }
 
@@ -248,10 +252,13 @@ final class GitHubCachePersistenceTests: XCTestCase {
         XCTAssertEqual(calls.count, 1)
 
         // 这次写入已落盘：同实例 TTL 内命中（in-memory），且文件已自愈成合法 JSON。
+        // （解码策略必须与 persist 的 .iso8601 配对——正是本分支修掉的那类错误。）
         _ = try await client.get(cacheURL)
         calls = await http.calls
         XCTAssertEqual(calls.count, 1, "恢复写入后 TTL 内应该命中")
-        XCTAssertNotNil(try? JSONDecoder().decode([String: GitHubReleaseCacheEntry].self, from: Data(contentsOf: file)),
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        XCTAssertNotNil(try? decoder.decode([String: GitHubReleaseCacheEntry].self, from: Data(contentsOf: file)),
                         "写回的缓存文件必须是合法 JSON")
     }
 
