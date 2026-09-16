@@ -1,7 +1,7 @@
 import Foundation
 
 /// 一次性迁移：v0.3.x 时代这个工具叫 **AppUpdater**、Bundle ID 是 `com.local.appupdater`，
-/// v0.4 起对外统一成 **Updraft**，支持目录与 UserDefaults suite 都跟着换了名字。
+/// v0.4 起对外统一成 **Updraft**，数据目录与 UserDefaults suite 都跟着换了名字。
 ///
 /// 这里把老数据搬到新位置。三条设计要求：
 ///
@@ -13,12 +13,12 @@ import Foundation
 /// 调用时机很关键：必须在**任何路径对象被构造之前**。放在 `main.swift` 顶层、
 /// `UpdraftApp.main()` 之前——`StateCache` / `BackupStore` 一旦先跑，读到的就是空目录。
 public enum LegacyMigration {
-    /// 迁移完成的标记，写在**新** suite 里。
+    /// 迁移完成的标记，写在**新**设置域里。
     public static let completedKey = "migration.renamed-from-appupdater"
 
     /// 幂等入口。
     public static func runIfNeeded() {
-        migrateDefaultsIfNeeded()
+        migrateDefaults()
 
         let fm = FileManager.default
         for searchPath in [FileManager.SearchPathDirectory.applicationSupportDirectory, .cachesDirectory] {
@@ -52,29 +52,38 @@ public enum LegacyMigration {
         }
     }
 
-    /// 老 suite 里的设置搬到新 suite。
+    /// 老域里的设置搬到新的设置 suite。
     ///
-    /// 只补新 suite 里**不存在**的键，绝不覆盖已经写进去的值。
-    /// 不遍历固定的键名清单，是因为这份清单在 `AppSettings` 里是 private 的，
-    /// 抄一份过来迟早会漂；而那个 suite 里的键全是我们自己写的，没有误搬的风险。
+    /// - 源：老 bundle id `com.local.appupdater`。老版本把 bundle id 当 suite 名，macOS 会
+    ///   拒绝它，所以老的设置实际落在**老 app 自己的域**里——域名同样是 `com.local.appupdater`，
+    ///   就是同一个 plist。这个默认值读到的正是那些值。
+    /// - 目标：`SelfUpdateIdentity.settingsSuiteName`，必须与 `AppSettings.suiteName` 同源，
+    ///   否则等于把设置搬进一个没人读的角落。
+    ///
+    /// 只补新域里**不存在**的键，绝不覆盖已经写进去的值。
+    /// - Returns: 真的搬了至少一个键才返回 `true`。
     @discardableResult
     public static func migrateDefaults(
         from legacySuiteName: String = SelfUpdateIdentity.Legacy.bundleID,
-        to suiteName: String = SelfUpdateIdentity.bundleID
+        to suiteName: String = SelfUpdateIdentity.settingsSuiteName
     ) -> Bool {
-        guard let legacy = UserDefaults(suiteName: legacySuiteName),
-              let current = UserDefaults(suiteName: suiteName) else { return false }
+        // 这一步同时也是护栏：suite 名一旦撞上自己的 bundle id，这里会拿到 nil，
+        // 迁移会静静地什么都不做。`SelfUpdateIdentity.settingsSuiteName` 保证不会。
+        guard let current = UserDefaults(suiteName: suiteName) else { return false }
         guard current.bool(forKey: completedKey) == false else { return false }
 
-        let values = legacy.dictionaryRepresentation()
+        // 用 `persistentDomain` 而不是 `UserDefaults(suiteName:).dictionaryRepresentation()`：
+        // 后者返回的是**搜索列表**，会把 NSGlobalDomain 的六十多个系统键（语言、触控板手势…）
+        // 一起端上来（实测同一份 suite：64 个 vs 我们自己的 2 个）。搬设置不该捎上这些。
+        let values = UserDefaults.standard.persistentDomain(forName: legacySuiteName) ?? [:]
+        var copied = 0
         for (key, value) in values where current.object(forKey: key) == nil {
             current.set(value, forKey: key)
+            copied += 1
         }
+        // 老域不存在也照样打标记：老用户机器上可能压根没写过设置，
+        // 不打标记的话每次启动都要再查一遍。
         current.set(true, forKey: completedKey)
-        return true
-    }
-
-    private static func migrateDefaultsIfNeeded() {
-        migrateDefaults()
+        return copied > 0
     }
 }

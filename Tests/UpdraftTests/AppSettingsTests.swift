@@ -94,4 +94,42 @@ final class AppSettingsTests: XCTestCase {
         settings.scheduledCheckMinute = 5
         XCTAssertEqual(settings.scheduleText, "定时检查：每天 09:05")
     }
+
+    // MARK: - suite 名不能撞自己的 bundle id
+
+    /// `UserDefaults(suiteName:)` 一旦撞上自己的 bundle id，macOS 直接返回 nil
+    /// （"Using your own bundle identifier as an NSUserDefaults suite name does not make
+    /// sense and will not work"），后果**全是静默的**：读值拿到 nil 回退默认值、
+    /// 写值落到 `store ?? .standard`、一次性迁移的 guard 直接失败。
+    ///
+    /// v0.3.4 及更早的 suite 名就是当时的 bundle id，所以「定时检查改了时刻不生效、
+    /// 重启回 10:00」一直存在。这条断言是那个 bug 的护栏：suite 名一旦被改回 bundle id，
+    /// 它会红。
+    func testSuiteNameIsNotOwnBundleIdentifier() {
+        XCTAssertNotEqual(AppSettings.suiteName, SelfUpdateIdentity.bundleID)
+        XCTAssertEqual(AppSettings.suiteName, SelfUpdateIdentity.settingsSuiteName)
+        XCTAssertTrue(AppSettings.suiteName.hasPrefix(SelfUpdateIdentity.bundleID))
+    }
+
+    /// suite 被系统拒掉（返回 nil）时必须退回 `.standard`，而不是拿 nil 去读。
+    /// 锁的就是「读的是未回退的 optional、写的是回退后的 store」那个错位。
+    func testResolveStoreFallsBackToStandardWhenSuiteIsRefused() {
+        let resolved = AppSettings.resolveStore(injected: nil, suiteName: "com.local.updraft") { _ in nil }
+        XCTAssertTrue(resolved === UserDefaults.standard)
+    }
+
+    func testResolveStorePrefersInjectedStore() {
+        let injected = freshDefaults()
+        let resolved = AppSettings.resolveStore(injected: injected, suiteName: "ignored") { _ in nil }
+        XCTAssertTrue(resolved === injected)
+    }
+
+    /// 读和写必须落在同一个 store 上，否则「存得进、读不回」。
+    func testDefaultPathKeepsReadAndWriteOnTheSameStore() {
+        let store = freshDefaults()
+        let settings = AppSettings(defaults: store)
+        settings.scheduledCheckHour = 6
+        XCTAssertEqual(store.integer(forKey: "check.schedule.hour"), 6, "写没落到注入的 store")
+        XCTAssertEqual(AppSettings(defaults: store).scheduledCheckHour, 6, "读没走同一个 store")
+    }
 }

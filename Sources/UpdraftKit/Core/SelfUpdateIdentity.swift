@@ -17,6 +17,22 @@ public enum SelfUpdateIdentity {
     /// 与 `~/Library/Caches/<这个名字>/`（换包工作区共用一层）。
     public static let supportDirectoryName = "Updraft"
 
+    /// 设置的 UserDefaults suite 名。**必须与 `bundleID` 不同**，所以加了后缀。
+    ///
+    /// macOS 拒绝「拿自己的 bundle id 当 suite 名」：`UserDefaults(suiteName:)` 直接返回
+    /// nil，只在控制台留一行
+    /// "Using your own bundle identifier as an NSUserDefaults suite name does not make
+    ///  sense and will not work"。踩上去的后果**全是静默的**：
+    ///
+    /// - 读值拿到 nil → 回退默认值("设置改了不生效、重启回默认")；
+    /// - 写值落到 `store ?? .standard` → 存得进去，但下次还是从 nil 里读；
+    /// - 一次性迁移的 `guard let current = UserDefaults(suiteName:)` 直接失败 → 整个 no-op。
+    ///
+    /// v0.3.4 及更早（suite 名 = `com.local.appupdater` = 当时的 bundle id）一直带着这个
+    /// bug，直到 v0.3.4 的迁移验证时才暴露。用 `bundleID + ".settings"` 结构性地错开，
+    /// 顺带让「以后再改 bundle id，设置域跟着走」。
+    public static let settingsSuiteName = "\(bundleID).settings"
+
     /// v0.3.x 及更早用的名字。**只用于兼容读取与一次性迁移**（见 `LegacyMigration`），
     /// 新代码一律用上面的常量。留着它的唯一理由：老用户机器上还挂着这些路径。
     public enum Legacy {
