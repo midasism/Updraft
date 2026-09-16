@@ -30,6 +30,17 @@ public struct UpgradeJob: Identifiable, Sendable {
 
         public var id: String { app.id }
         public var isAutomated: Bool { action.isAutomated }
+
+        /// 这次升级的起点版本。列表行、确认面板、执行结果三处共用同一口径，
+        /// 抄三遍必然有一天只改一处。
+        public var fromVersion: String {
+            release.upgradeFrom(actualVersion: app.currentVersion)
+        }
+
+        /// 包管理器账本记录的版本与磁盘实际不一致（应用被自己的更新器升过）。
+        public var hasStaleLedger: Bool {
+            release.hasStaleLedger(actualVersion: app.currentVersion)
+        }
     }
 
     /// 一个条目的执行结果，Homebrew 与自动安装共用。
@@ -96,7 +107,7 @@ public struct UpgradeJob: Identifiable, Sendable {
             produced.append(Outcome(
                 id: items[position].id,
                 appName: items[position].app.name,
-                fromVersion: items[position].app.currentVersion,
+                fromVersion: items[position].fromVersion,
                 toVersion: items[position].release.version,
                 succeeded: false,
                 summary: "已取消，未执行",

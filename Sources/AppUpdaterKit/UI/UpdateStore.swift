@@ -258,6 +258,21 @@ public final class UpdateStore: ObservableObject {
         ))
     }
 
+    /// 截图通道专用：直接塞一份合成结果，跳过扫描与网络。
+    ///
+    /// 有些界面状态只在特定机器上碰得到——比如「Homebrew 账本滞后于磁盘」，
+    /// 要求那台机器上的某个 cask 恰好被应用自带的更新器升过、而 brew 的记录没跟上。
+    /// 一旦账本被修正，真实截图就再也复现不了。截图要能随时重跑并给出同一张图，
+    /// 就不能依赖当时那台机器碰巧是什么状态。**不写缓存**，免得污染真实结果。
+    func loadSynthetic(updates: [AppUpdate]) {
+        let now = Date()
+        self.updates = updates
+        lastChecked = now
+        lastFullCheckAt = now
+        lastCheckStartedAt = now
+        isShowingCachedResult = false
+    }
+
     // MARK: - 升级任务的编排
 
     /// 单个应用的升级。只有能自动完成的动作才建任务，其余走 `openDownload`。
@@ -347,7 +362,7 @@ public final class UpdateStore: ObservableObject {
                 outcome = UpgradeJob.Outcome(
                     id: item.id,
                     appName: item.app.name,
-                    fromVersion: item.app.currentVersion,
+                    fromVersion: item.fromVersion,
                     toVersion: item.release.version,
                     succeeded: false,
                     summary: "需要手动完成（\(item.action.buttonTitle)）",
@@ -423,7 +438,7 @@ public final class UpdateStore: ObservableObject {
         return UpgradeJob.Outcome(
             id: item.id,
             appName: item.app.name,
-            fromVersion: item.app.currentVersion,
+            fromVersion: item.fromVersion,
             toVersion: item.release.version,
             succeeded: succeeded,
             summary: succeeded ? "已升级到 \(item.release.version)" : "brew 升级失败",

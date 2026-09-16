@@ -10,7 +10,7 @@ import Foundation
 public struct CheckEngine: Sendable {
     /// brew 查询缝。返回 `nil` 表示"没找到 Homebrew，问不了"，
     /// 与"问了，没有过期项"（空字典）是两回事，不能混为一谈。
-    public typealias BrewOutdatedSource = @Sendable (_ tokens: [String]) async -> [String: String]?
+    public typealias BrewOutdatedSource = @Sendable (_ tokens: [String]) async -> [String: BrewOutdatedCask]?
 
     private let sparkleProbe: any UpdateProbing
     private let electronProbe: any UpdateProbing
@@ -76,8 +76,13 @@ public struct CheckEngine: Sendable {
                 results.append(AppUpdate(app: app, result: .failed(reason: "未找到 Homebrew，无法确认是否过期")))
                 continue
             }
-            if let latest = outdated?[token] {
-                results.append(AppUpdate(app: app, result: .updateAvailable(ReleaseInfo(version: latest))))
+            if let entry = outdated?[token] {
+                // 账本版本一并带上。它可能与磁盘实际版本不一致（应用被自己的更新器升过），
+                // 界面据此把升级起点写成账本值，而不是拼出一句 `6.17.0 → 6.17.0`。
+                results.append(AppUpdate(app: app, result: .updateAvailable(ReleaseInfo(
+                    version: entry.latestVersion,
+                    ledgerVersion: entry.installedVersion
+                ))))
             } else {
                 results.append(AppUpdate(app: app, result: .upToDate(latest: app.currentVersion ?? "—")))
             }
