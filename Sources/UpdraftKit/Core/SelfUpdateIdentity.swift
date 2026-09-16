@@ -33,7 +33,7 @@ public enum SelfUpdateIdentity {
     /// 顺带让「以后再改 bundle id，设置域跟着走」。
     public static let settingsSuiteName = "\(bundleID).settings"
 
-    /// v0.3.x 及更早用的名字。**只用于兼容读取与一次性迁移**（见 `LegacyMigration`），
+    /// v0.3.3 及更早用的名字。**只用于兼容读取与一次性迁移**（见 `LegacyMigration`），
     /// 新代码一律用上面的常量。留着它的唯一理由：老用户机器上还挂着这些路径。
     public enum Legacy {
         public static let bundleID = "com.local.appupdater"

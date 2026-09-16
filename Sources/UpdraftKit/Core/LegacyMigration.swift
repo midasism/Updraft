@@ -1,7 +1,7 @@
 import Foundation
 
 /// 一次性迁移：v0.3.x 时代这个工具叫 **AppUpdater**、Bundle ID 是 `com.local.appupdater`，
-/// v0.4 起对外统一成 **Updraft**，数据目录与 UserDefaults suite 都跟着换了名字。
+/// v0.3.4 起对外统一成 **Updraft**，数据目录与 UserDefaults suite 都跟着换了名字。
 ///
 /// 这里把老数据搬到新位置。三条设计要求：
 ///
