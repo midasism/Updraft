@@ -68,7 +68,7 @@ final class CheckEngineScopeTests: XCTestCase {
     private func engine(
         probeLog: ProbeLog,
         tokenLog: TokenLog,
-        outdated: [String: String]? = [:],
+        outdated: [String: BrewOutdatedCask]? = [:],
         answer: @escaping @Sendable (AppInfo) -> UpdateResult = { _ in .upToDate(latest: "9.9") }
     ) -> CheckEngine {
         let probe = StubProbe(log: probeLog, answer: answer)
@@ -119,7 +119,11 @@ final class CheckEngineScopeTests: XCTestCase {
             makeApp("ngrok", source: .homebrewCask(token: "ngrok"))
         ]
 
-        let results = await engine(probeLog: log, tokenLog: tokenLog, outdated: ["ngrok": "3.1.0"]).check(apps: all)
+        let results = await engine(
+            probeLog: log,
+            tokenLog: tokenLog,
+            outdated: ["ngrok": BrewOutdatedCask(installedVersion: "3.0.0", latestVersion: "3.1.0")]
+        ).check(apps: all)
 
         XCTAssertEqual(Set(results.map(\.app.name)), Set(all.map(\.name)))
         XCTAssertEqual(log.count, 2, "不该为不需要网络的来源发请求")

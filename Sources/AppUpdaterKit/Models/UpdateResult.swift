@@ -125,13 +125,22 @@ public struct AppUpdate: Identifiable, Equatable, Codable, Sendable {
     }
 
     /// 行内副标题：`Sparkle · 1.3.5 → 1.4.4 · 109 MB`
+    ///
+    /// 升级起点取 `release.upgradeFrom` 而不是直接读 `app.currentVersion`：
+    /// Homebrew 的升级起点是它账本里记的版本，两者不一致时要如实说出来。
     public var detailText: String {
         var parts: [String] = [app.source.badge]
 
         switch result {
         case .updateAvailable(let release):
-            let current = app.currentVersion ?? "?"
+            let current = release.upgradeFrom(actualVersion: app.currentVersion)
             parts.append("\(current) → \(release.version)")
+            // 账本滞后时补一句。不补的话，这条会显示成 `6.17.0 → 6.17.0`——
+            // 两个数字相同却挂在「可更新」组里，看起来像是版本号算错了。
+            if release.hasStaleLedger(actualVersion: app.currentVersion),
+               let actual = app.currentVersion {
+                parts.append("brew 记录滞后，实际已装 \(actual)")
+            }
             if let size = release.size, size > 0 {
                 parts.append(Self.formatBytes(size))
             }

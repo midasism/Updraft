@@ -79,6 +79,24 @@ public struct BrewIndexOutcome: Sendable {
     }
 }
 
+/// `brew outdated` 对一个 cask（或 formula）的判定。
+///
+/// 两个版本号是一次调用里一起给的，必须一起记：`brew outdated` 认为「过期」，
+/// 比的是 **Caskroom 账本**里的已安装版本与 tap 里的最新版本。而界面原先只抄了后者，
+/// 左值另从 `.app` 包内 `Info.plist` 取——应用被自己的更新器升过之后，
+/// 账本会滞后于磁盘，两边就拼出 `6.17.0 → 6.17.0` 这种自相矛盾的写法。
+public struct BrewOutdatedCask: Sendable, Equatable {
+    /// Caskroom 账本记录的已安装版本。`nil` 表示这条记录里没给。
+    public let installedVersion: String?
+    /// tap 里的最新版本。
+    public let latestVersion: String
+
+    public init(installedVersion: String?, latestVersion: String) {
+        self.installedVersion = installedVersion
+        self.latestVersion = latestVersion
+    }
+}
+
 /// 封装所有 `brew` 调用。GUI 进程的 PATH 通常不含 Homebrew，因此所有调用都显式带上补齐后的环境变量。
 public enum BrewService {
     public static func brewPath() -> String? {
@@ -244,9 +262,9 @@ public enum BrewService {
     /// - Parameter scopedTo: 只比对这些 token。增量检查只关心刚动过的那几个 cask，
     ///   没必要每次都比一遍全表。收窄后 brew 若报错（例如 token 刚被卸载），
     ///   自动退回全量查询——宁可多花一次调用，也不能因为局部失败而漏报更新。
-    /// - Returns: token → 最新版本号。`nil` 表示没找到 Homebrew（问不了），
+    /// - Returns: token → 判定结果（账本版本 + 最新版本）。`nil` 表示没找到 Homebrew（问不了），
     ///   与"问了，没有过期项"（空字典）是两回事，调用方必须分开处理。
-    public static func outdatedCasks(scopedTo tokens: [String]? = nil) async -> [String: String]? {
+    public static func outdatedCasks(scopedTo tokens: [String]? = nil) async -> [String: BrewOutdatedCask]? {
         guard let brew = brewPath() else { return nil }
 
         if let tokens, !tokens.isEmpty, let scoped = await runOutdated(brew: brew, only: tokens) {
@@ -256,7 +274,7 @@ public enum BrewService {
         return await runOutdated(brew: brew, only: nil)
     }
 
-    private static func runOutdated(brew: String, only tokens: [String]?) async -> [String: String]? {
+    private static func runOutdated(brew: String, only tokens: [String]?) async -> [String: BrewOutdatedCask]? {
         var arguments = ["outdated", "--cask", "--greedy", "--json=v2"]
         if let tokens { arguments.append(contentsOf: tokens) }
 
@@ -265,28 +283,49 @@ public enum BrewService {
             arguments: arguments,
             environment: environment()
         )
-        guard result.exitCode == 0,
-              let data = result.stdout.data(using: .utf8),
+        guard result.exitCode == 0 else { return nil }
+        return parseOutdated(result.stdout)
+    }
+
+    /// `brew outdated --json=v2` 的 stdout → token 判定表。解析失败返回 `nil`。
+    ///
+    /// `installed_versions` 与 `current_version` 必须一起取：只留后者就答不出
+    /// 「brew 以为装的是哪一版」，而那正是它报过期的依据。
+    static func parseOutdated(_ stdout: String) -> [String: BrewOutdatedCask]? {
+        guard let data = stdout.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
 
-        var outdated: [String: String] = [:]
-
-        if let casks = root["casks"] as? [[String: Any]] {
-            for cask in casks {
-                guard let name = cask["name"] as? String else { continue }
-                let latest = normalizedVersion(cask["current_version"]) ?? "新版本"
-                outdated[name] = latest
+        // cask 与 formula 的字段名一致，解析逻辑共用一份，免得将来只改一边。
+        func collect(_ entries: [[String: Any]], installedKey: String) -> [String: BrewOutdatedCask] {
+            var collected: [String: BrewOutdatedCask] = [:]
+            for entry in entries {
+                guard let name = entry["name"] as? String else { continue }
+                collected[name] = BrewOutdatedCask(
+                    installedVersion: installedVersion(from: entry, key: installedKey),
+                    latestVersion: normalizedVersion(entry["current_version"]) ?? "新版本"
+                )
             }
-        } else if let formulas = root["formulae"] as? [[String: Any]] {
-            for formula in formulas {
-                guard let name = formula["name"] as? String else { continue }
-                outdated[name] = normalizedVersion(formula["current_version"]) ?? "新版本"
-            }
+            return collected
         }
 
-        return outdated
+        if let casks = root["casks"] as? [[String: Any]] {
+            return collect(casks, installedKey: "installed_versions")
+        }
+        if let formulae = root["formulae"] as? [[String: Any]] {
+            return collect(formulae, installedKey: "installed")
+        }
+        return [:]
+    }
+
+    /// 账本字段在两种产物上形状不同，这里都认：
+    /// cask 的 `installed_versions` 是 `["6.12.0,61200"]`，
+    /// formula 的 `installed` 是 `[{"version": "1.2.3"}]`。
+    static func installedVersion(from entry: [String: Any], key: String) -> String? {
+        if let flat = normalizedVersion(entry[key]) { return flat }
+        guard let list = entry[key] as? [[String: Any]] else { return nil }
+        return normalizedVersion(list.first?["version"])
     }
 
     // MARK: - 升级

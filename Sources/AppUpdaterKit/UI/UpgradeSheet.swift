@@ -155,7 +155,7 @@ struct UpgradeSheet: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(item.app.name)
                                     .font(.system(size: 12, weight: .medium))
-                                Text("\(item.app.currentVersion ?? "?") → \(item.release.version)")
+                                Text("\(item.fromVersion) → \(item.release.version)")
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                             }
@@ -179,6 +179,18 @@ struct UpgradeSheet: View {
                     warningBox(unverified.map { "\($0.app.name)：\($0.plan?.signature.description ?? "")" })
                 }
 
+                // 账本滞后：brew 报"过期"的依据是它自己的账本，而账本可能落后于磁盘
+                // （应用被内建更新器升过就会这样）。此时点下去是把同一个版本重装一遍——
+                // 有效（能顺带修正账本）但多余，代价得先说清楚，不能让它看起来像正常升级。
+                let staleLedger = job.items.filter(\.hasStaleLedger)
+                if !staleLedger.isEmpty {
+                    warningBox(staleLedger.map { item in
+                        "\(item.app.name)：Homebrew 记录的是 \(item.release.ledgerVersion ?? "未知")，"
+                        + "磁盘上实际已是 \(item.app.currentVersion ?? "未知")（应用自己的更新器升过）。"
+                        + "继续会重新安装 \(item.release.version) 并修正记录。"
+                    })
+                }
+
                 Text("逐项串行执行，单项失败不会中断其余应用。每个应用升级前都会备份旧版本。")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -198,7 +210,7 @@ struct UpgradeSheet: View {
                 HStack(spacing: 10) {
                     Text(item.app.name)
                         .font(.system(size: 13, weight: .medium))
-                    Text("\(item.app.currentVersion ?? "?") → \(item.release.version)")
+                    Text("\(item.fromVersion) → \(item.release.version)")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                     Spacer()

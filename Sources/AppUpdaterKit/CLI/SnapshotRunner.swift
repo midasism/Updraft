@@ -24,6 +24,10 @@ public enum SnapshotRunner {
         case menubar
         /// 设置窗口。**合成状态**（临时 suite 的设置对象），不持久化、不触发授权。
         case settings
+        /// 主窗口在「Homebrew 账本滞后于磁盘」下的样子。**合成状态**：这个界面状态要求
+        /// 机器上某个 cask 恰好被应用自带的更新器升过而 brew 记录没跟上，账本一被修正
+        /// 就再也复现不了；合成即确定，重跑必然得到同一张图。
+        case ledger
     }
 
     private final class Flag {
@@ -46,6 +50,14 @@ public enum SnapshotRunner {
         // 菜单栏与设置是纯合成视图，不走检查流程，渲染结果完全确定。
         if let syntheticRoot = syntheticRoot(for: mode) {
             return render(syntheticRoot, canvas: canvas, outputPath: outputPath)
+        }
+
+        // 账本滞后态：数据是编好的，同样不查网络、不扫本机。它要借 ContentView 渲染，
+        // 所以不能走上面那条纯合成视图的支路，但也不需要等任何检查。
+        if mode == .ledger {
+            let store = UpdateStore()
+            store.loadSynthetic(updates: makeSyntheticLedgerUpdates())
+            return render(AnyView(ContentView(store: store)), canvas: canvas, outputPath: outputPath)
         }
 
         let store = UpdateStore()
@@ -86,8 +98,8 @@ public enum SnapshotRunner {
                 FileHandle.standardError.write(Data("没有找到可自动升级的条目，退回主窗口截图\n".utf8))
                 root = AnyView(ContentView(store: store))
             }
-        case .menubar, .settings:
-            // 上面 syntheticRoot 已接住，不会走到这里。
+        case .menubar, .settings, .ledger:
+            // 上面 syntheticRoot / ledger 分支已接住，不会走到这里。
             root = AnyView(EmptyView())
         }
 
@@ -96,7 +108,7 @@ public enum SnapshotRunner {
 
     private static func defaultCanvas(for mode: Mode) -> NSSize {
         switch mode {
-        case .main: NSSize(width: 880, height: 660)
+        case .main, .ledger: NSSize(width: 880, height: 660)
         case .menubar: NSSize(width: 280, height: 220)
         case .settings: NSSize(width: 484, height: 280)
         default: NSSize(width: 600, height: 540)
@@ -181,7 +193,7 @@ public enum SnapshotRunner {
                 SettingsView(settings: settings)
                     .background(Color(nsColor: .windowBackgroundColor))
             )
-        case .main, .confirm, .batch, .running, .cancelled:
+        case .main, .confirm, .batch, .running, .cancelled, .ledger:
             return nil
         }
     }
@@ -189,7 +201,7 @@ public enum SnapshotRunner {
     /// 造一个升级任务，把面板推到确认态。
     private static func prepareJob(store: UpdateStore, mode: Mode, flag: Flag) {
         switch mode {
-        case .main, .running, .cancelled, .menubar, .settings:
+        case .main, .running, .cancelled, .menubar, .settings, .ledger:
             break
         case .confirm:
             if let update = store.updates(in: .updateAvailable)
@@ -206,7 +218,7 @@ public enum SnapshotRunner {
     /// 造一个完全确定的升级任务，用来渲染"卡住 / 取消"相关的界面。
     private static func syntheticJob(for mode: Mode) -> UpgradeJob? {
         switch mode {
-        case .main, .confirm, .batch, .menubar, .settings:
+        case .main, .confirm, .batch, .menubar, .settings, .ledger:
             return nil
 
         case .running:
@@ -279,6 +291,78 @@ public enum SnapshotRunner {
             ]
             return job
         }
+    }
+
+    /// 账本滞后态的固定样本。
+    ///
+    /// 名字与版本都取自本机 2026-09-16 实测的真实状态（`Proxyman` 账本 `6.12.0` 而磁盘已是
+    /// `6.17.0`；`Wireshark` 账本 `4.6.4` 而磁盘已是 `4.6.8`），截图看起来才像真的。
+    /// 对照关系是刻意排的：前两条是账本滞后，第三条 `iTerm2` 是同样走 Homebrew、
+    /// 但账本一致的正常升级，第四条是 Sparkle 升级——四行并排才看得出附注只加在该加的地方。
+    private static func makeSyntheticLedgerUpdates() -> [AppUpdate] {
+        func entry(
+            _ name: String,
+            bundleID: String,
+            source: AppSource,
+            current: String,
+            result: UpdateResult
+        ) -> AppUpdate {
+            AppUpdate(
+                app: AppInfo(
+                    name: name,
+                    bundleID: bundleID,
+                    path: URL(fileURLWithPath: "/Applications/\(name).app"),
+                    currentVersion: current,
+                    buildVersion: nil,
+                    source: source
+                ),
+                result: result
+            )
+        }
+
+        return [
+            entry(
+                "Proxyman", bundleID: "com.proxyman.NSProxy",
+                source: .homebrewCask(token: "proxyman"), current: "6.17.0",
+                result: .updateAvailable(ReleaseInfo(
+                    version: "6.17.0", size: 41_943_040, ledgerVersion: "6.12.0"
+                ))
+            ),
+            entry(
+                "Wireshark", bundleID: "org.wireshark.Wireshark",
+                source: .homebrewCask(token: "wireshark-app"), current: "4.6.8",
+                result: .updateAvailable(ReleaseInfo(
+                    version: "4.6.8", size: 78_118_912, ledgerVersion: "4.6.4"
+                ))
+            ),
+            entry(
+                "iTerm2", bundleID: "com.googlecode.iterm2",
+                source: .homebrewCask(token: "iterm2"), current: "3.5.14",
+                result: .updateAvailable(ReleaseInfo(
+                    version: "3.6.0", size: 31_457_280, ledgerVersion: "3.5.14"
+                ))
+            ),
+            entry(
+                "Cherry Studio", bundleID: "com.kangfenmao.CherryStudio",
+                source: .sparkle(feedURL: nil), current: "1.8.4",
+                // 带上安装包地址，这一行才会渲染成正常的「升级」按钮而不是「—」。
+                result: .updateAvailable(ReleaseInfo(
+                    version: "2.0.9",
+                    downloadURL: URL(string: "https://example.com/Cherry-Studio-2.0.9-arm64.dmg"),
+                    size: 390_070_272
+                ))
+            ),
+            entry(
+                "Battery Buddy", bundleID: "com.mohamedbakhouche.BatteryBuddy",
+                source: .sparkle(feedURL: nil), current: "1.0.4",
+                result: .upToDate(latest: "1.0.4")
+            ),
+            entry(
+                "IINA", bundleID: "com.colliderli.iina",
+                source: .sparkle(feedURL: nil), current: "1.4.4",
+                result: .upToDate(latest: "1.4.4")
+            )
+        ].sorted(by: AppUpdate.listOrder)
     }
 
     /// 三个固定的应用条目。名字取自本机真实会升级的包，截图看起来才像真的。
