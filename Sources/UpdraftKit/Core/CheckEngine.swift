@@ -14,6 +14,7 @@ public struct CheckEngine: Sendable {
 
     private let sparkleProbe: any UpdateProbing
     private let electronProbe: any UpdateProbing
+    private let masProbe: any UpdateProbing
     private let brewOutdated: BrewOutdatedSource
     private let concurrency: Int
 
@@ -21,19 +22,26 @@ public struct CheckEngine: Sendable {
         self.init(
             sparkleProbe: SparkleProbe(client: client),
             electronProbe: ElectronProbe(client: client),
+            masProbe: MASProbe(client: client),
             concurrency: concurrency
         )
     }
 
     /// 供测试注入假探针 / 假 brew 用。
+    ///
+    /// `masProbe` **刻意不给默认值**。给了默认值就是真探针，而带 `.appStore` 的用例
+    /// 会因此真的去请求 `itunes.apple.com`——测试不该碰网络。没有默认值时编译器会
+    /// 逼着每个测试调用点显式说明用哪个假探针，这类回归在编译期就被拦住。
     init(
         sparkleProbe: any UpdateProbing,
         electronProbe: any UpdateProbing,
+        masProbe: any UpdateProbing,
         brewOutdated: @escaping BrewOutdatedSource = { await BrewService.outdatedCasks(scopedTo: $0) },
         concurrency: Int = 8
     ) {
         self.sparkleProbe = sparkleProbe
         self.electronProbe = electronProbe
+        self.masProbe = masProbe
         self.brewOutdated = brewOutdated
         self.concurrency = max(1, concurrency)
     }
@@ -54,10 +62,8 @@ public struct CheckEngine: Sendable {
             switch app.source {
             case .homebrewCask(let token):
                 brewTokens.append(token)
-            case .sparkle, .electron:
+            case .sparkle, .electron, .appStore:
                 pending.append(app)
-            case .appStore:
-                results.append(AppUpdate(app: app, result: .unsupported(reason: "App Store 管理，需在 App Store 内更新")))
             case .microsoftAutoUpdate:
                 results.append(AppUpdate(app: app, result: .unsupported(reason: "由 Microsoft AutoUpdate 管理")))
             case .unsupported(let reason):
@@ -118,6 +124,8 @@ public struct CheckEngine: Sendable {
             result = await sparkleProbe.probe(app)
         case .electron:
             result = await electronProbe.probe(app)
+        case .appStore:
+            result = await masProbe.probe(app)
         default:
             result = .unsupported(reason: "该来源无需网络探测")
         }

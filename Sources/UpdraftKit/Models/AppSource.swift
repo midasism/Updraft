@@ -8,7 +8,7 @@ public enum AppSource: Hashable, Codable, Sendable {
     case sparkle(feedURL: URL?)
     /// Electron 应用，从 `app-update.yml` 拿到更新源。
     case electron(feedURL: URL?)
-    /// App Store 安装（含 `_MASReceipt` 收据）。v0.1 只标记不检测。
+    /// App Store 安装（含 `_MASReceipt` 收据）。v0.3.6 起可查版本，但不能由本工具安装。
     case appStore
     /// Microsoft AutoUpdate 管理的应用。v0.1 只标记不检测。
     case microsoftAutoUpdate
@@ -39,7 +39,11 @@ public extension AppSource {
             return true
         case .sparkle(let feedURL):
             return feedURL != nil
-        case .appStore, .microsoftAutoUpdate, .unsupported:
+        case .appStore:
+            // v0.3.6 起走 iTunes Lookup 查版本。**只是查得到**，仍然装不了也升不了——
+            // 安装按钮停在 `.openDownload`（打开 App Store 页面），由系统负责真正的更新。
+            return true
+        case .microsoftAutoUpdate, .unsupported:
             return false
         }
     }

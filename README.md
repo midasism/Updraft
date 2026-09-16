@@ -63,6 +63,7 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 - 🧹 **中断能自愈** — 强制退出或断电留下的中间态文件，下次启动自动收拾；最坏情况（旧包已挪走、新包未就位）会把旧包搬回去。
 - 🗄️ **备份不会变成磁盘黑洞** — 每个应用只留最近 1 份旧包（IINA 一个包就 104 MB）；设置页把当前占用直接量给你看，不满意就地清空。清空是**两步确认**，因为清了不可恢复。
 - 🧾 **版本号说得清来路** — Homebrew 判断「过期」靠的是它自己账本里记的已安装版本，而不是磁盘上 `.app` 的真实版本。应用被自带的更新器升过之后账本会滞后，于是出现「报过期、实际已最新」。列表按账本写升级起点并附注磁盘真实版本，确认页说清点下去是把同一个版本重装一遍（顺带修正账本）——**不把它伪装成一次正常升级**。
+- 🍎 **App Store 应用也查得出版本** — 走公开的 iTunes Lookup 接口，商店上有新版就列进「可更新」并给出体积；点「下载」跳 App Store 页面（装还是 App Store 自己装，本工具不碰 `/Applications`）。实测本机 18 个 App Store 应用全部查得到，其中 9 个本来就有更新被漏在「无法自动检测」里。
 - 🕵️ **拿不准就说拿不准** — feed 读不出来就标“不支持”，版本比对拿不到权威值就标“检查失败”，**绝不猜一个版本号糊弄你**。
 - 📌 **菜单栏常驻** — 图标旁的数字就是待更新数；下拉里看上次检查时间，「立即检查」不开窗口也能跑，跑的还是同一个引擎。
 - ⏰ **每日定时检查 + 系统通知** — 到点在后台自动查（错过时段恢复后补一次，当天查过不重复），有更新弹系统通知、点按直达主窗口；权限被拒就安静闭嘴，状态照旧在菜单栏上。
@@ -265,13 +266,18 @@ NSUnbufferedIO=YES nohup "$AU" --job "IINA" >/tmp/updraft.log 2>&1 &
 | Homebrew cask | `brew outdated --cask --greedy --json=v2` | 跑 `brew upgrade --cask`，带实时日志 |
 | Sparkle | 读 `Info.plist` 的 `SUFeedURL`，拉 appcast.xml 比对版本 | **下载 → 校验签名 → 备份 → 原子替换** |
 | Electron | 读包内 `app-update.yml`，走 GitHub Releases API 或 `latest-mac.yml` | 同上（dmg / zip） |
-| App Store | 只识别（`_MASReceipt`） | 暂不支持 |
+| App Store | 走公开的 iTunes Lookup 接口查最新版（`itunes.apple.com/lookup`，免费、无鉴权） | **打开 App Store 页面，不由本工具安装** |
 | Microsoft AutoUpdate | 只识别 | 暂不支持 |
 | Adobe / 游戏 / JetBrains 等 | 只识别，并给出具体原因 | 暂不支持 |
 
 分类优先级不能随意调换：`mac-mouse-fix` 这类应用既是 Homebrew cask 又内嵌 Sparkle，必须让 **Homebrew 优先**——只有它能在本机一键升完。
 
 版本比对优先用构建号整数（Sparkle 里这是权威值），回退到点分版本号。两者都拿不到就判定为“检查失败”，**绝不猜测**。
+
+> [!NOTE]
+> **App Store 条目查得到版本，但装不了——这是故意的。** 走的是公开的 `itunes.apple.com/lookup?bundleId=…` 接口（免费、无鉴权、无频率限制），只回答“商店上现在是哪一版”。安装那一步按钮停在**「下载」**（打开 App Store 页面），绝不会变成「升级」——App Store 的包由系统与 `macappstore://` 体系管理，本工具不往 `/Applications` 里换。批量升级也不会把它们卷进来（`InstallAction.isAutomated` 为 `false`）。
+>
+> 两个实测细节：接口对“查不到”返回的是 **HTTP 200 + 空数组**（不是 404），所以不能靠状态码判断；`bundleId` **原样拼进查询、不做任何剥离**——`5ZSL2CJU2T.com.dingtalk.mac` 这种带 team 前缀的原样就命中，剥掉前缀的 `com.dingtalk.mac` 反而 0 条，而且剥前缀可能撞上另一个开发者的同名反向域名。清单里也**没有** `bundleVersion` 字段，所以版本只比营销版本号，本地的 `CFBundleVersion`（`255`、`58012001` 这类整数）不参与比对。
 
 > [!NOTE]
 > 一个反直觉的边界：构建号**相等**时不能直接判定为最新，要继续比 `sparkle:shortVersionString`，否则“构建号相同但版本号更新”的应用会被漏掉。
@@ -408,6 +414,7 @@ Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但
 - 未公布 `SUPublicEDKey` 的应用无法做密码学验签，界面上会明确标注“未校验”。
 - LM Studio 用 s3 provider，配置里只有 bucket，拼不出可访问地址，不猜。
 - 少数应用的 appcast 已经失效（ClashX 返回 404、Vox 返回 410），会显示为「检查失败」而不是假装是最新。
+- App Store 来的条目**能查版本、不能由本工具安装**：按钮停在「下载」（打开 App Store 页面）。另外如果某个应用已从商店区下架，查不到就如实标成「App Store 上查不到该应用」，不会拿一个旧版本号冒充最新。
 - 增量刷新不重建 brew 索引，因此拿不到索引时会沿用上一次的分类结果（Bundle ID 一致才沿用）。这只会影响“这个应用归谁管”这一类判定，下一次全量检查会自我纠正。
 - 搜索只匹配**应用名称与 Bundle ID**，是子串匹配：不做模糊/子序列（输入 `chrstd` 找不到 Cherry Studio）、没有拼音（输入 `wx` 找不到微信）、不搜安装路径与版本号。多词按空格切分，每个词都要命中。
 - Homebrew 条目的升级起点取自 brew 的账本（`brew outdated` 报的已安装版本），不是磁盘上 `.app` 的版本。应用被自带更新器升过之后账本会滞后，列表会附注「brew 记录滞后，实际已装 X」——点升级是把同一个版本重装一遍，顺带把 brew 的记录修正过来；这也正是让账本归位的唯一办法，所以这类条目不会被隐藏。
@@ -480,7 +487,7 @@ Sources/UpdraftKit/
                SignatureVerifier / PackageDownloader / BackupStore / Installer
                CheckScheduler（定时检查的纯判定：CheckSchedule + CheckPlanner）
                SelfUpdateIdentity / SelfUpdateChecker / SelfUpdateManifest（本工具自更新）
-  Probes/      Sparkle 与 Electron 两套探针 + appcast 解析
+  Probes/      Sparkle / Electron / App Store 三套探针 + appcast 解析
   UI/          SwiftUI 界面 + 状态源
                AppModel（装配根）/ MenuBarContent（菜单栏下拉）/ SettingsView（设置）
                UpdateWatcher（调度运行时）/ UpdateNotifier（系统通知）
@@ -499,13 +506,15 @@ Tests/UpdraftTests/          244 个单元测试 / 32 个套件（1 条真机用
 1. 在 `Probes/` 加一个实现 `UpdateProbing` 的探针；
 2. 在 `AppClassifier` 里加一条判定。
 
-这是为接入 App Store、Chrome 私有更新接口等预留的扩展点。因为 `CheckEngine` 只依赖协议（探针走 `UpdateProbing`，brew 结果走一个闭包），它的检查范围可以被精确断言，不需要真的发请求。
+这是为接入 Chrome 私有更新接口、JetBrains Toolbox 等预留的扩展点。因为 `CheckEngine` 只依赖协议（探针走 `UpdateProbing`，brew 结果走一个闭包），它的检查范围可以被精确断言，不需要真的发请求。App Store 就是这么接进来的：`Probes/MASProbe.swift` + 分类器里一条判定，其余文件一行没动。
+
+测试里注入假探针时要注意：`CheckEngine` 的内部初始化器**不给 `masProbe` 默认值**。给了默认值就是真探针，带 `.appStore` 的用例会真的去请求 `itunes.apple.com`——没有默认值，编译器会逼着每个测试调用点显式说明用哪个假探针。
 
 ### 测试策略
 
 - **纯逻辑单测** — 版本比对（边界：相等、递增整数 vs 点分、空值、后缀）、appcast XML 解析、`app-update.yml` 解析，用真实抓取的 XML 片段做 fixture。
 - **扫描器测试** — 对临时构造的伪 `.app` 目录树断言分类结果。
-- **探针测试** — 注入 stub HTTP 客户端，覆盖 200 / 404 / 超时 / 畸形 XML 四条路径。
+- **探针测试** — 解析层用真实抓取的响应片段做 fixture；App Store 探针另注入 stub HTTP 缝（`HTTPFetching`），覆盖空结果 / 畸形 JSON / 商店区兜底 / 网络失败四条路径，并断言 `bundleId` 原样拼进查询、本地构建号不参与比对。
 - **自更新** — GitHub Releases 三态与 404 / 403 / 超时 / 畸形 JSON；清单 Ed25519 通过 / 篡改 zip / 换公钥必须失败；缺公钥或缺清单标「未校验」；换包中断后 `.Updraft.*.old.app` 自愈。
 - **重点回归** — appcast 增量补丁 7 条、签名校验 6 条（真实 Ed25519 密钥对签名通过、篡改一个字节必须失败、换公钥必须失败、缺公钥判“跳过”而非失败）、中断恢复 10 条。
 - **调度与当日去重** — `CheckPlanner` 全部注入合成时刻（到点/未到/错过/已查过/已触发过/跨天），`UpdateWatcher.tick(now:)` 注入时钟断言「一天只触发一次、跨天再触发」，不真等时间。
@@ -519,7 +528,7 @@ Tests/UpdraftTests/          244 个单元测试 / 32 个套件（1 条真机用
 
 - **v0.3** — 本工具自更新（GitHub Releases 检测 + Ed25519 验签 + 自替换）。（✅ 已落地）
 - **v0.4** — 每日定时后台检查 + 系统通知；菜单栏图标。（✅ 已落地；「跳过此版本」推迟，重启条件：用户反馈被通知打扰）
-- **v0.5** — 接入 App Store 应用；针对 Chrome 私有更新接口、JetBrains Toolbox 等做专门适配。
+- **v0.5** — 接入 App Store 应用的版本检测（✅ 已落地；安装仍交给 App Store 自己）；针对 Chrome 私有更新接口、JetBrains Toolbox 等做专门适配。
 - **长期** — 支持 Sparkle 增量补丁（`spk!` 格式），大应用（IINA 104 MB、Cherry Studio 372 MB）升级可以少下载很多。
 
 ## 生态
