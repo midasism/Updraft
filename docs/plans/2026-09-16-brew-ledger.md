@@ -129,7 +129,7 @@ public var hasStaleLedger: Bool { release.hasStaleLedger(actualVersion: app.curr
 | `UI/UpdateStore.swift` | 两处 `Outcome.fromVersion` 换口径；新增 `loadSynthetic(updates:)` |
 | `UI/UpgradeSheet.swift` | 确认清单与执行态换口径；新增账本滞后提示框 |
 | `CLI/SnapshotRunner.swift` | 新增 `Mode.ledger` 与 `makeSyntheticLedgerUpdates()` |
-| `Tests/AppUpdaterTests/BrewLedgerTests.swift` | 新增 19 个用例 |
+| `Tests/AppUpdaterTests/BrewLedgerTests.swift` | 新增 22 个用例 |
 | `Tests/AppUpdaterTests/IncrementalRefreshTests.swift` | 假 brew 的返回类型跟着改 |
 
 ### 验证实况
@@ -140,7 +140,22 @@ public var hasStaleLedger: Bool { release.hasStaleLedger(actualVersion: app.curr
 | `swiftc` 断言驱动（纯逻辑子集 + `CheckEngine`） | ✅ **27 项断言全绿**，退出码 0 |
 | `--snapshot --mode ledger` | ✅ Proxyman `6.12.0 → 6.17.0 · brew 记录滞后，实际已装 6.17.0`；iTerm2 对照行无附注 |
 | `--snapshot --mode main`（真机 92 个应用） | ✅ 真机两条账本滞后如实呈现，卡片仍是 4 / 17 / 71 |
-| `--snapshot --mode batch` | ✅ 确认清单的账本滞后提示框 |
+| `--snapshot --mode batch` | ✅ 确认清单的账本滞后提示框（真机 Proxyman / Wireshark 两条） |
+| `--snapshot --mode confirm` | ✅ 单应用确认页走预检计划，不受影响，无回归 |
+
+### CI（本机跑不了 `swift test`，这是权威验证）
+
+PR **#6** <https://github.com/midasism/Updraft/pull/6>，CI run `35045857409` **通过**：
+
+| 项 | 结果 |
+|---|---|
+| `单元测试` | ✅ **239 个用例 / 31 个套件，0 失败**（1 个 skip，是既有的真机用例） |
+| `编译 Release` | ✅ |
+| `Test Suite 'BrewLedgerTests'` | ✅ passed，**逐条核对到 22 个用例名**（`grep "Test Suite 'BrewLedgerTests' passed"`） |
+| 套件数变化 | 30 → 31，正是新套件 |
+
+新用例数写错过一次：初稿按记忆记成 19，CI 日志里逐条数是 **22**。已按日志更正——
+**用例数这类数字只认日志，不认印象。**
 
 ### 与计划的两处偏离
 
