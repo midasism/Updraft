@@ -3,15 +3,46 @@ import Foundation
 /// 网络读取缝。生产走 `HTTPClient`，测试注入 stub，探针不直接碰 `URLSession`。
 public protocol HTTPFetching: Sendable {
     func data(from url: URL) async throws -> Data
+
+    /// 带状态码与响应头的读取。`data(from:)` 会把非 2xx 当错误抛掉，而 **304 是正常分支**
+    /// （GitHub 条件请求的"没变化"），需要它的调用方走这里。
+    ///
+    /// - Parameters:
+    ///   - headers: 附加请求头（如 `If-None-Match`）。实现方必须原样带上。
+    /// - Returns: 原始状态码 + 响应体 + `ETag`。**不抛非 2xx**——状态码由调用方解释。
+    func response(from url: URL, headers: [String: String]) async throws -> HTTPResponse
 }
 
-extension HTTPFetching {
-    public func string(from url: URL) async throws -> String {
+public extension HTTPFetching {
+    /// 默认实现：走 `data(from:)`，状态码恒为 200、无响应头。
+    ///
+    /// 不关心状态码的测试桩可以完全不实现这个方法；要测 304 / ETag 的桩必须自己覆写，
+    /// 否则会拿到"假 200"——这正是需要覆写的信号。
+    func response(from url: URL, headers: [String: String]) async throws -> HTTPResponse {
+        let data = try await self.data(from: url)
+        return HTTPResponse(data: data, statusCode: 200, etag: nil)
+    }
+
+    func string(from url: URL) async throws -> String {
         let data = try await self.data(from: url)
         guard let text = String(data: data, encoding: .utf8) else {
             throw HTTPError.notUTF8
         }
         return text
+    }
+}
+
+/// `response(from:headers:)` 的返回值。
+public struct HTTPResponse: Sendable {
+    public let data: Data
+    public let statusCode: Int
+    /// 响应头里的 `ETag`（大小写不敏感查找）。条件请求的凭据，存下来供下次 `If-None-Match`。
+    public let etag: String?
+
+    public init(data: Data, statusCode: Int, etag: String?) {
+        self.data = data
+        self.statusCode = statusCode
+        self.etag = etag
     }
 }
 
@@ -51,6 +82,30 @@ public struct HTTPClient: HTTPFetching, Sendable {
             throw HTTPError.statusCode(http.statusCode)
         }
         return data
+    }
+
+    public func response(from url: URL, headers: [String: String]) async throws -> HTTPResponse {
+        var request = URLRequest(url: url)
+        for (name, value) in headers {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        // 304 是条件请求的正常分支，不能当错误抛——调用方拿原始状态码自己解释。
+        let (data, raw) = try await session.data(for: request)
+        let http = raw as? HTTPURLResponse
+        return HTTPResponse(
+            data: data,
+            statusCode: http?.statusCode ?? 200,
+            etag: Self.headerValue("ETag", in: http?.allHeaderFields)
+        )
+    }
+
+    /// `allHeaderFields` 的键大小写不保证，按名字不敏感查找。
+    static func headerValue(_ name: String, in fields: [AnyHashable: Any]?) -> String? {
+        guard let fields else { return nil }
+        for (key, value) in fields where (key as? String)?.lowercased() == name.lowercased() {
+            return value as? String
+        }
+        return nil
     }
 }
 

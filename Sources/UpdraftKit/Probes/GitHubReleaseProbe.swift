@@ -63,10 +63,11 @@ public struct GitHubReleaseInfo: Equatable, Sendable {
 /// 与 App Store 同一条红线：**只查不装**。GitHub 的包没有本工具的 Ed25519 清单，
 /// `Installer` 三道校验的第一道就过不去，`InstallAction` 停在 `.openDownload`（打开 Release 页）。
 public struct GitHubReleaseProbe: Sendable {
-    private let client: HTTPFetching
+    /// GitHub 请求统一走共享客户端（TTL 缓存 + ETag 重验证），限额是按 IP 共享的。
+    private let gitHub: GitHubAPIClient
 
-    public init(client: HTTPFetching = HTTPClient.shared) {
-        self.client = client
+    public init(gitHub: GitHubAPIClient = .shared) {
+        self.gitHub = gitHub
     }
 
     public func probe(_ app: AppInfo) async -> UpdateResult {
@@ -83,7 +84,7 @@ public struct GitHubReleaseProbe: Sendable {
 
         let data: Data
         do {
-            data = try await client.data(from: url)
+            data = try await gitHub.get(url)
         } catch {
             // 403 在 GitHub 这里几乎只有一种含义：未鉴权限额（60 次/小时）。
             // 如实说出来，别让它混进笼统的"HTTP 403"里让人摸不着头脑。

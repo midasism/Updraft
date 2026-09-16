@@ -24,7 +24,7 @@ public struct CheckEngine: Sendable {
             sparkleProbe: SparkleProbe(client: client),
             electronProbe: ElectronProbe(client: client),
             masProbe: MASProbe(client: client),
-            gitHubProbe: GitHubReleaseProbe(client: client),
+            gitHubProbe: GitHubReleaseProbe(gitHub: GitHubAPIClient(http: client)),
             concurrency: concurrency
         )
     }

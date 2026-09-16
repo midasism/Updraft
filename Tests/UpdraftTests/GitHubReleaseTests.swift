@@ -77,6 +77,18 @@ private func ghApp(
     )
 }
 
+/// 每个用例独立的探针：临时文件缓存 + 指定假缝，绝不碰 `.shared` 的真缓存。
+/// TTL 设成无穷——探针行为测试只走网络路径，缓存语义由 `GitHubCacheTests` 专项覆盖。
+private func makeProbe(_ http: HTTPFetching) -> GitHubReleaseProbe {
+    let file = FileManager.default.temporaryDirectory
+        .appendingPathComponent("gh-cache-\(UUID().uuidString).json")
+    return GitHubReleaseProbe(gitHub: GitHubAPIClient(
+        http: http,
+        store: GitHubReleaseCacheStore(fileURL: file),
+        ttl: .infinity
+    ))
+}
+
 // MARK: - tag 归一
 
 final class GitHubTagNormalizationTests: XCTestCase {
@@ -157,7 +169,7 @@ final class GitHubReleaseParsingTests: XCTestCase {
 final class GitHubProbeTests: XCTestCase {
     func testUpdateAvailableStripsVFromDisplayedVersion() async {
         let http = GitHubFakeHTTP(bodies: [altTabRelease])
-        let result = await GitHubReleaseProbe(client: http).probe(ghApp())
+        let result = await makeProbe(http).probe(ghApp())
 
         guard case .updateAvailable(let release) = result else {
             return XCTFail("11.4.3 → v11.6.1 应判可更新，实际 \(result)")
@@ -175,20 +187,20 @@ final class GitHubProbeTests: XCTestCase {
     func testUpToDateIgnoresVPrefixMismatch() async {
         // Zed：本地 1.19.2，远端 v1.19.2。写法不同，版本相同。
         let http = GitHubFakeHTTP(bodies: [altTabRelease])
-        let result = await GitHubReleaseProbe(client: http).probe(ghApp(version: "11.6.1"))
+        let result = await makeProbe(http).probe(ghApp(version: "11.6.1"))
         XCTAssertEqual(result, .upToDate(latest: "11.6.1"))
     }
 
     func testLocalNewerDoesNotInduceDowngrade() async {
         let http = GitHubFakeHTTP(bodies: [altTabRelease])
-        let result = await GitHubReleaseProbe(client: http).probe(ghApp(version: "12.0.0"))
+        let result = await makeProbe(http).probe(ghApp(version: "12.0.0"))
         XCTAssertEqual(result, .upToDate(latest: "11.6.1"))
     }
 
     func testPackageAtTagStillDetectsUpdate() async {
         // Insomnia：13.0.2 → core@13.2.0。不剥 @ 前缀的话这里会静默判成"已最新"。
         let http = GitHubFakeHTTP(bodies: [insomniaRelease])
-        let result = await GitHubReleaseProbe(client: http)
+        let result = await makeProbe(http)
             .probe(ghApp("Insomnia", bundleID: "com.insomnia.app", version: "13.0.2"))
         guard case .updateAvailable(let release) = result else {
             return XCTFail("Insomnia 13.0.2 → 13.2.0 应判可更新，实际 \(result)")
@@ -198,7 +210,7 @@ final class GitHubProbeTests: XCTestCase {
 
     func testUnknownLocalVersionDoesNotReportUpdate() async {
         let http = GitHubFakeHTTP(bodies: [altTabRelease])
-        let result = await GitHubReleaseProbe(client: http).probe(ghApp(version: nil))
+        let result = await makeProbe(http).probe(ghApp(version: nil))
         XCTAssertEqual(result, .upToDate(latest: "11.6.1"))
     }
 
@@ -206,19 +218,19 @@ final class GitHubProbeTests: XCTestCase {
         // Zed/FlClash 的本地构建号是时间戳/日期形态，GitHub 响应里没有对应字段。
         // 本地 build 故意给个大数，same short version 必须仍是"已最新"。
         let http = GitHubFakeHTTP(bodies: [altTabRelease])
-        let result = await GitHubReleaseProbe(client: http).probe(ghApp(version: "11.6.1", build: "20260909"))
+        let result = await makeProbe(http).probe(ghApp(version: "11.6.1", build: "20260909"))
         XCTAssertEqual(result, .upToDate(latest: "11.6.1"))
     }
 
     func testAppWithoutBundleIDIsUnsupported() async {
         let http = GitHubFakeHTTP(bodies: [altTabRelease])
-        let result = await GitHubReleaseProbe(client: http).probe(ghApp(bundleID: nil))
+        let result = await makeProbe(http).probe(ghApp(bundleID: nil))
         XCTAssertEqual(result, .unsupported(reason: "没有 Bundle ID，无法查询 GitHub Release"))
     }
 
     func testAppOutsideCatalogIsUnsupported() async {
         let http = GitHubFakeHTTP(bodies: [altTabRelease])
-        let result = await GitHubReleaseProbe(client: http)
+        let result = await makeProbe(http)
             .probe(ghApp("Mystery", bundleID: "com.example.mystery"))
         XCTAssertEqual(result, .unsupported(reason: "不在 GitHub Release 白名单内"))
         let urls = await http.requested
@@ -226,25 +238,25 @@ final class GitHubProbeTests: XCTestCase {
     }
 
     func testRateLimitBecomesFailedWithExplicitReason() async {
-        let result = await GitHubReleaseProbe(client: GitHubStatusHTTP(code: 403)).probe(ghApp())
+        let result = await makeProbe(GitHubStatusHTTP(code: 403)).probe(ghApp())
         guard case .failed(let reason) = result else { return XCTFail("403 应是 failed，实际 \(result)") }
         XCTAssertTrue(reason.contains("限额"), "403 的文案要点名限额：\(reason)")
     }
 
     func testMissingRepoBecomesUnsupportedWithRepoName() async {
-        let result = await GitHubReleaseProbe(client: GitHubStatusHTTP(code: 404)).probe(ghApp())
+        let result = await makeProbe(GitHubStatusHTTP(code: 404)).probe(ghApp())
         guard case .unsupported(let reason) = result else { return XCTFail("404 应是 unsupported，实际 \(result)") }
         XCTAssertTrue(reason.contains("lwouis/alt-tab-macos"), "理由里要带 owner/repo：\(reason)")
     }
 
     func testOtherHTTPStatusBecomesFailed() async {
-        let result = await GitHubReleaseProbe(client: GitHubStatusHTTP(code: 500)).probe(ghApp())
+        let result = await makeProbe(GitHubStatusHTTP(code: 500)).probe(ghApp())
         XCTAssertEqual(result, .failed(reason: "HTTP 500"))
     }
 
     func testUnparseableBodyBecomesUnsupported() async {
         let http = GitHubFakeHTTP(bodies: ["not json"])
-        let result = await GitHubReleaseProbe(client: http).probe(ghApp())
+        let result = await makeProbe(http).probe(ghApp())
         XCTAssertEqual(result, .unsupported(reason: "GitHub Release 响应里没有可辨认的版本号"))
     }
 }
