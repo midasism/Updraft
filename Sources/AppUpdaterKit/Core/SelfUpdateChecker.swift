@@ -62,10 +62,16 @@ public struct SelfUpdateChecker: Sendable {
     private let client: any HTTPFetching
     private let latestURL: URL
 
-    public init(client: any HTTPFetching = HTTPClient(), latestURL: URL = SelfUpdateIdentity.releasesLatestURL) {
+    public init(client: any HTTPFetching = HTTPClient.shared, latestURL: URL = SelfUpdateIdentity.releasesLatestURL) {
         self.client = client
         self.latestURL = latestURL
     }
+
+    /// 测试用：默认装配必须落在共享会话上。
+    ///
+    /// 这里曾经是 `HTTPClient()`——每次自检都新建一个 `URLSession`，而它不会自己失效，
+    /// 于是每查一次就多留一份连接池。这条断言就是防它悄悄退回去的。
+    var clientSessionForTesting: URLSession? { (client as? HTTPClient)?.session }
 
     public func check(currentVersion: String? = SelfUpdateIdentity.currentShortVersion) async -> SelfUpdateStatus {
         let current = currentVersion?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

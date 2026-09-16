@@ -93,6 +93,21 @@ final class SelfUpdateCheckerTests: XCTestCase {
         XCTAssertEqual(status, .upToDate(latest: "0.2.1"))
     }
 
+    /// 默认装配必须复用共享会话。
+    ///
+    /// 这里曾经是 `HTTPClient()`：自检每天都至少跑一次，每跑一次就新建一个 `URLSession`，
+    /// 而它没有 `deinit` 可以失效，于是每跑一次就多留一份连接池与 delegate 队列。
+    /// 单次泄漏量小到 `leaks` 读不出来（2026-09-16 实测确实是 0 leaks），
+    /// 所以这个回归只能靠这条断言守着，不能靠工具发现。
+    func testDefaultSelfUpdateCheckerReusesSharedSession() {
+        let session = SelfUpdateChecker().clientSessionForTesting
+        XCTAssertNotNil(session, "默认装配应该是走网络的 HTTPClient，而不是别的 HTTPFetching")
+        XCTAssertTrue(
+            session === HTTPClient.shared.session,
+            "默认装配必须落在 HTTPClient.shared 上——别退回每次自检新建会话"
+        )
+    }
+
     func testMissingCurrentVersionFailsWithoutHittingNetwork() async {
         let client = StubHTTPClient()
         client.responses["releases/latest"] = .success(githubJSON(tag: "v0.3.0", assets: [zipAsset()]))

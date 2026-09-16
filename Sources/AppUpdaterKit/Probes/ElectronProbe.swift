@@ -57,7 +57,7 @@ public struct ElectronFeed: Equatable, Sendable {
 public struct ElectronProbe: Sendable {
     private let client: HTTPClient
 
-    public init(client: HTTPClient = HTTPClient()) {
+    public init(client: HTTPClient = .shared) {
         self.client = client
     }
 
