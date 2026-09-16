@@ -234,6 +234,7 @@ final class BrewLedgerTests: XCTestCase {
             sparkleProbe: SilentProbe(),
             electronProbe: SilentProbe(),
             masProbe: SilentProbe(),
+            gitHubProbe: SilentProbe(),
             brewOutdated: { _ in
                 ["proxyman": BrewOutdatedCask(installedVersion: "6.12.0", latestVersion: "6.17.0")]
             }
@@ -253,6 +254,7 @@ final class BrewLedgerTests: XCTestCase {
             sparkleProbe: SilentProbe(),
             electronProbe: SilentProbe(),
             masProbe: SilentProbe(),
+            gitHubProbe: SilentProbe(),
             brewOutdated: { _ in
                 ["proxyman": BrewOutdatedCask(installedVersion: nil, latestVersion: "6.17.0")]
             }

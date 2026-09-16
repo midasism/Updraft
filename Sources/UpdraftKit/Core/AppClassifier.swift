@@ -51,12 +51,24 @@ public struct AppClassifier: Sendable {
             return .sparkle(feedURL: url)
         }
         if scanned.hasEmbeddedSparkle {
+            // 内嵌 Sparkle 但 feed 硬编码（如 AltTab）：若在 GitHub 白名单里，
+            // GitHub 才是它真正可查的渠道；不在就维持原结论。
+            if let bundleID = scanned.bundleID, GitHubReleaseCatalog.contains(bundleID: bundleID) {
+                return .githubRelease
+            }
             return .unsupported(reason: "内嵌 Sparkle 但更新源在程序内硬编码")
         }
 
         // 4. Electron 自带更新器。
         if scanned.appUpdateYML != nil {
             return .electron(feedURL: nil)
+        }
+
+        // 4.5 GitHub Release 白名单兜底。**放在 Electron 之后**：
+        // 应用自带的更新通道永远优先——它比 GitHub 更懂自己的版本节奏。
+        // 放在 Microsoft 判定之前没风险：白名单里没有 com.microsoft.* 的条目。
+        if let bundleID = scanned.bundleID, GitHubReleaseCatalog.contains(bundleID: bundleID) {
+            return .githubRelease
         }
 
         // 5. 微软自家更新器。
