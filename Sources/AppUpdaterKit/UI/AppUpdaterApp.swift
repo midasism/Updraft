@@ -29,9 +29,7 @@ public struct AppUpdaterApp: App {
 
         // 独立小窗口而不是 sheet：菜单栏触发的场景里主窗口可能是关着的，设置要能独立到达。
         WindowGroup("设置", id: "settings") {
-            SettingsView(settings: model.settings, onNotificationsEnabled: {
-                model.requestNotificationAuthorization()
-            })
+            SettingsSceneRoot(model: model)
         }
         .windowResizability(.contentSize)
 
@@ -57,6 +55,37 @@ public struct AppUpdaterApp: App {
         } else {
             Image(systemName: "arrow.triangle.2.circlepath")
         }
+    }
+}
+
+/// 设置窗口的装配壳。
+///
+/// 存在的理由只有一个：`SettingsView` 本身只观察 `AppSettings`，看不见 `UpdateStore`。
+/// 而备份占用与清理状态都在 store 上——少了这层，清理完界面不会重画
+/// （`@Published` 改了，但没有任何视图订阅它）。
+///
+/// 也让 `SettingsView` 保持「只吃值」：截图通道要用合成数字渲染同一张页面，
+/// 不必为了画一张图去碰真实的备份目录。
+struct SettingsSceneRoot: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        SettingsView(
+            settings: model.settings,
+            onNotificationsEnabled: {
+                model.requestNotificationAuthorization()
+            },
+            backups: BackupPanelState(
+                bytes: model.store.backupUsage,
+                isBusy: model.store.isClearingBackups
+            ),
+            onRefreshBackups: {
+                Task { await model.store.refreshBackupUsage() }
+            },
+            onClearBackups: {
+                Task { await model.store.clearBackups() }
+            }
+        )
     }
 }
 

@@ -449,6 +449,61 @@ final class BackupStoreTests: XCTestCase {
         XCTAssertLessThan(earlier, later)
         XCTAssertEqual(earlier.count, later.count, "定长才能保证字典序稳定")
     }
+
+    func testClearAllRemovesEveryBackupAndReportsFreedBytes() async throws {
+        let app = try makeFakeApp(name: "Demo", marker: "v1")
+        let backupsRoot = root.appendingPathComponent("Backups")
+        let store = BackupStore(root: backupsRoot)
+
+        try await store.backup(appAt: app, name: "Demo", version: "1.0", bundleID: "com.example.demo")
+        try await store.backup(appAt: app, name: "Demo", version: "1.0", bundleID: "com.example.other")
+        let before = store.totalSize()
+        XCTAssertGreaterThan(before, 0, "先确认真的备份进去东西了，否则下面全是空断言")
+
+        let report = store.clearAll()
+
+        XCTAssertEqual(report.removed, 2, "两个 bundle id 各一条")
+        XCTAssertEqual(report.freedBytes, before, "报的释放量应当就是清理前量到的量")
+        XCTAssertEqual(store.totalSize(), 0, "清完再量必须是 0，不是『大概清掉了』")
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: backupsRoot.path),
+            "只清内容，根目录要留着——下次备份还得往里写"
+        )
+    }
+
+    /// 护栏单独断言谓词，**刻意不调 `clearAll()`**。
+    ///
+    /// 如果在 `/` 或家目录上真调一次，这条测试的通过就依赖于被它验证的那段代码本身：
+    /// 护栏哪天回归了，测试不会红，它会去删用户的磁盘。这种"为了测安全而制造危险"的
+    /// 写法不值得，直接断言谓词更准也更安全。
+    func testDangerousRootsAreRefused() {
+        XCTAssertFalse(BackupStore(root: URL(fileURLWithPath: "/")).isSafeToClear)
+        XCTAssertFalse(
+            BackupStore(root: FileManager.default.homeDirectoryForCurrentUser).isSafeToClear,
+            "家目录必须挡住"
+        )
+        XCTAssertFalse(
+            BackupStore(root: URL(fileURLWithPath: "/tmp")).isSafeToClear,
+            "层级过浅的路径也要挡"
+        )
+        XCTAssertTrue(BackupStore(root: root.appendingPathComponent("Backups")).isSafeToClear)
+    }
+}
+
+final class BackupUsageTextTests: XCTestCase {
+    /// `backupUsageText` 是纯函数：量占用是别人（`refreshBackupUsage`）的事，
+    /// 这里只钉住三态文案，防止有人把整树遍历又塞回主线程。
+    func testUsageTextHasThreeStates() {
+        XCTAssertEqual(UpdateStore.backupUsageText(bytes: nil), "正在统计…")
+        XCTAssertEqual(UpdateStore.backupUsageText(bytes: 0), "暂无备份")
+        XCTAssertTrue(UpdateStore.backupUsageText(bytes: 1_830_000_000).contains("GB"))
+        XCTAssertTrue(UpdateStore.backupUsageText(bytes: 4_000_000).contains("MB"))
+    }
+
+    /// 负数不该出现，真出现了也不许拼出「-5 MB」这种东西。
+    func testNegativeBytesFallBackToNoBackups() {
+        XCTAssertEqual(UpdateStore.backupUsageText(bytes: -1), "暂无备份")
+    }
 }
 
 final class UpgradeJobTests: XCTestCase {
