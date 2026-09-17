@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// 检查编排：把一批应用分派到各自的探针，并汇总结果。
 ///
@@ -59,6 +60,7 @@ public struct CheckEngine: Sendable {
         apps: [AppInfo],
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async -> [AppUpdate] {
+        Log.probe.info("开始检查更新，共 \(apps.count) 个应用")
         var results: [AppUpdate] = []
         var pending: [AppInfo] = []
         var brewTokens: [String] = []
@@ -106,20 +108,28 @@ public struct CheckEngine: Sendable {
         }
 
         var done = 0
-        for batch in pending.chunked(into: concurrency) {
-            await withTaskGroup(of: AppUpdate.self) { group in
-                for app in batch {
-                    group.addTask { await probe(app) }
-                }
-                for await update in group {
-                    results.append(update)
-                    done += 1
-                    onProgress?(done, total)
+        await withTaskGroup(of: AppUpdate.self) { group in
+            var iterator = pending.makeIterator()
+            // 填满初始窗口
+            for _ in 0..<concurrency {
+                guard let app = iterator.next() else { break }
+                group.addTask { await self.probe(app) }
+            }
+            // 每收到一个结果就补一个新任务，保持并发度恒定
+            for await update in group {
+                results.append(update)
+                done += 1
+                onProgress?(done, total)
+                if let app = iterator.next() {
+                    group.addTask { await self.probe(app) }
                 }
             }
         }
 
-        return sorted(results)
+        let sorted = sorted(results)
+        let updateCount = sorted.filter { if case .updateAvailable = $0.result { return true }; return false }.count
+        Log.probe.info("检查完成，\(sorted.count) 个结果，其中 \(updateCount) 个有更新")
+        return sorted
     }
 
     private func probe(_ app: AppInfo) async -> AppUpdate {

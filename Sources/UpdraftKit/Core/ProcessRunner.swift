@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// 子进程执行封装。
 ///
@@ -109,6 +110,7 @@ public enum ProcessRunner {
                 // 关掉写端让它们读到 EOF 收工，免得每失败一次就漏两个线程。
                 try? outPipe.fileHandleForWriting.close()
                 try? errPipe.fileHandleForWriting.close()
+                Log.process.error("进程启动失败: \(executable) \(arguments.joined(separator: " ")) — \(error.localizedDescription)")
                 continuation.resume(returning: Result(
                     exitCode: -1,
                     stdout: "",
@@ -143,7 +145,7 @@ public enum ProcessRunner {
         executable: String,
         arguments: [String],
         environment: [String: String]? = nil
-    ) -> AsyncStream<String> {
+    ) -> AsyncStream<StreamEvent> {
         AsyncStream { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)
@@ -157,19 +159,17 @@ public enum ProcessRunner {
             pipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
-                continuation.yield(String(decoding: data, as: UTF8.self))
+                continuation.yield(.output(String(decoding: data, as: UTF8.self)))
             }
 
             process.terminationHandler = { finished in
                 pipe.fileHandleForReading.readabilityHandler = nil
-                // 收尾：把管道里剩下的读完，再补一行退出状态。
+                // 收尾：把管道里剩下的读完。
                 let tail = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
                 if !tail.isEmpty {
-                    continuation.yield(String(decoding: tail, as: UTF8.self))
+                    continuation.yield(.output(String(decoding: tail, as: UTF8.self)))
                 }
-                continuation.yield(finished.terminationStatus == 0
-                    ? "\n✔ 完成\n"
-                    : "\n✘ 进程退出码 \(finished.terminationStatus)\n")
+                continuation.yield(.finished(exitCode: finished.terminationStatus))
                 continuation.finish()
             }
 
@@ -180,7 +180,8 @@ public enum ProcessRunner {
             do {
                 try process.run()
             } catch {
-                continuation.yield("无法启动进程：\(error.localizedDescription)\n")
+                continuation.yield(.output("无法启动进程：\(error.localizedDescription)\n"))
+                continuation.yield(.finished(exitCode: -1))
                 continuation.finish()
             }
         }
@@ -239,6 +240,7 @@ private extension ProcessRunner {
 
             // 三条路都没拿到：管道已关说明进程确实结束了，但退出码没了。
             // 安装器不能把"不知道"当成功，所以按失败处理。
+            Log.process.fault("进程 \(pid) 退出状态未知（管道已关闭，但三条路径均未获取到退出码）")
             completion(Outcome(
                 exitCode: -1,
                 notice: "无法确认子进程的退出状态（管道已关闭，但未收到退出码）"
@@ -264,11 +266,13 @@ private extension ProcessRunner {
     /// 僵尸对 `kill(pid, 0)` 仍然有响应，只判存活的话每次都要白等满 3 秒。
     /// 因此这里同时盯着两条路，任意一条拿到状态就立刻进入结果构造。
     static func terminate(pid: pid_t, reported: ReportedStatus, timeout: TimeInterval) -> Outcome {
+        Log.process.warning("进程 \(pid) 超过 \(Int(timeout))s 未退出，发送 SIGTERM")
         kill(pid, SIGTERM)
         var exitCode = waitForStatus(pid: pid, reported: reported, deadline: Date().addingTimeInterval(terminationGrace))
 
         if exitCode == nil {
             // 宽限期内没走，说明它不理会 SIGTERM。
+            Log.process.warning("进程 \(pid) 不响应 SIGTERM，发送 SIGKILL")
             kill(pid, SIGKILL)
             exitCode = waitForStatus(pid: pid, reported: reported, deadline: Date().addingTimeInterval(1))
         }

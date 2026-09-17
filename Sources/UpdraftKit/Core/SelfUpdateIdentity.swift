@@ -82,6 +82,13 @@ public enum SelfUpdateIdentity {
         nonEmpty(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)
     }
 
+    /// 统一的 HTTP User-Agent 值。版本号从 Bundle 动态获取，
+    /// CLI 或测试环境下回退到 "dev"。
+    public static var userAgent: String {
+        let version = currentShortVersion ?? "dev"
+        return "\(displayName)/\(version) (macOS)"
+    }
+
     /// 自替换的目标路径：优先正在运行的包，否则找 `/Applications` 下的自己。
     ///
     /// 新名字先找、旧名字兜底——老用户可能既不在跑、目录还叫 `AppUpdater.app`。

@@ -462,12 +462,15 @@ public final class UpdateStore: ObservableObject {
         job?.runningLog = log
 
         var succeeded = false
-        for await chunk in BrewService.upgradeStream(token: token) {
-            log += chunk
-            job?.runningLog = log
+        for await event in BrewService.upgradeStream(token: token) {
+            switch event {
+            case .output(let chunk):
+                log += chunk
+                job?.runningLog = log
+            case .finished(let exitCode):
+                succeeded = exitCode == 0
+            }
         }
-        // ProcessRunner.stream 在结束时补一行退出状态，据此判断结果。
-        succeeded = log.contains("✔ 完成")
 
         return UpgradeJob.Outcome(
             id: item.id,

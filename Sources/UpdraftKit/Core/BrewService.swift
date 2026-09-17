@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Homebrew cask 索引：把"应用"和"cask token"对应起来。
 public struct BrewCaskIndex: Sendable {
@@ -124,7 +125,9 @@ public enum BrewService {
     /// 时降级为逐个查询——坏的那几个跳过，其余的索引必须保住。
     /// 一个无关的坏 cask 不该让整个 Homebrew 功能瘫痪。
     public static func loadIndex() async -> BrewIndexOutcome {
+        Log.brew.info("开始加载 Homebrew cask 索引")
         guard let brew = brewPath() else {
+            Log.brew.warning("未找到 brew 可执行文件")
             return BrewIndexOutcome(index: nil, status: .brewNotFound)
         }
 
@@ -216,6 +219,7 @@ public enum BrewService {
 
         var batch = CaskInfoBatch()
         batch.stderr = batchResult.stderr
+        Log.brew.warning("批量 cask info 失败 (\(tokens.count) 个 token)，降级为逐个查询")
         // 逐个查询的并发别开太大：每次都是一个完整的 brew 进程，冷启动要几百毫秒。
         for chunk in tokens.chunked(into: 4) {
             await withTaskGroup(of: (String, [[String: Any]]?, String).self) { group in
@@ -331,10 +335,11 @@ public enum BrewService {
     // MARK: - 升级
 
     /// 流式执行 `brew upgrade --cask <token>`，逐块回传输出。
-    public static func upgradeStream(token: String) -> AsyncStream<String> {
+    public static func upgradeStream(token: String) -> AsyncStream<StreamEvent> {
         guard let brew = brewPath() else {
             return AsyncStream { continuation in
-                continuation.yield("找不到 brew，无法执行升级。\n")
+                continuation.yield(.output("找不到 brew，无法执行升级。\n"))
+                continuation.yield(.finished(exitCode: -1))
                 continuation.finish()
             }
         }

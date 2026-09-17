@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// 安装包下载器。
 ///
@@ -32,23 +33,31 @@ public struct PackageDownloader: Sendable {
         to destination: URL,
         onProgress: (@Sendable (Int64, Int64) -> Void)? = nil
     ) async throws {
+        Log.install.info("开始下载: \(url.absoluteString)")
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = resourceTimeout
-        configuration.httpAdditionalHeaders = ["User-Agent": "Updraft/0.2 (macOS)"]
+        configuration.httpAdditionalHeaders = ["User-Agent": SelfUpdateIdentity.userAgent]
 
         let delegate = Delegate(destination: destination, onProgress: onProgress)
         let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
 
-        try await delegate.start(session: session, url: url)
+        do {
+            try await delegate.start(session: session, url: url)
+        } catch {
+            Log.install.error("下载失败: \(url.lastPathComponent) — \(error.localizedDescription)")
+            throw error
+        }
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         guard FileManager.default.fileExists(atPath: destination.path) else {
+            Log.install.error("下载完成但文件不存在: \(destination.path)")
             throw DownloadError.notWritten
         }
+        Log.install.info("下载完成: \(url.lastPathComponent)")
     }
 
     private final class Delegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
