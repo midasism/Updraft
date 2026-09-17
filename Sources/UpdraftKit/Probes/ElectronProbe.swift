@@ -56,9 +56,12 @@ public struct ElectronFeed: Equatable, Sendable {
 /// Electron 应用更新探测。覆盖本机 15 个应用。
 public struct ElectronProbe: Sendable {
     private let client: HTTPClient
+    /// GitHub 通道统一走共享客户端（TTL 缓存 + ETag 重验证）；generic 通道不碰它。
+    private let gitHub: GitHubAPIClient
 
-    public init(client: HTTPClient = .shared) {
+    public init(client: HTTPClient = .shared, gitHub: GitHubAPIClient = .shared) {
         self.client = client
+        self.gitHub = gitHub
     }
 
     public func probe(_ app: AppInfo) async -> UpdateResult {
@@ -86,7 +89,7 @@ public struct ElectronProbe: Sendable {
         }
 
         do {
-            let data = try await client.data(from: url)
+            let data = try await gitHub.get(url)
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return .failed(reason: "GitHub 返回内容无法解析")
             }
