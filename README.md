@@ -66,7 +66,7 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 - 🍎 **App Store 应用也查得出版本** — 走公开的 iTunes Lookup 接口，商店上有新版就列进「可更新」并给出体积；点「下载」跳 App Store 页面（装还是 App Store 自己装，本工具不碰 `/Applications`）。实测本机 18 个 App Store 应用全部查得到，其中 9 个本来就有更新被漏在「无法自动检测」里。
 - 🐙 **开源应用接 GitHub Release** — 内嵌 Sparkle 但 feed 硬编码、或压根没有公开更新接口的开源应用（AltTab、Insomnia、FlClash、Zed、DBeaver、Clash Verge…），只要在白名单里就走 GitHub Releases API 查版本；tag 的 `v` 前缀与 `core@13.2.0` 这类写法都会自动归一。点「下载」跳 Release 页。查询结果带 1 小时磁盘缓存，一小时内反复检查不再消耗 API 限额。
 - 🕵️ **拿不准就说拿不准** — feed 读不出来就标“不支持”，版本比对拿不到权威值就标“检查失败”，**绝不猜一个版本号糊弄你**。
-- 📌 **菜单栏常驻** — 图标旁的数字就是待更新数；下拉里看上次检查时间，「立即检查」不开窗口也能跑，跑的还是同一个引擎。
+- 📌 **菜单栏常驻，也可以不常驻** — 图标旁的数字就是待更新数；下拉里看上次检查时间，「立即检查」不开窗口也能跑，跑的还是同一个引擎。不想要它就在设置里关掉，屏幕顶部随即干净：**没的只是图标**，定时检查照跑、通知照弹、⌘Q 照旧。回程是 Dock 图标打开主窗口，或直接 ⌘,。
 - ⏰ **每日定时检查 + 系统通知** — 到点在后台自动查（错过时段恢复后补一次，当天查过不重复），有更新弹系统通知、点按直达主窗口；权限被拒就安静闭嘴，状态照旧在菜单栏上。
 - 🖥️ **GUI 之外还有 CLI** — 检查、预演、执行、恢复、导出界面截图都有对应命令，方便脚本化与排查。
 
@@ -82,10 +82,10 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 
 <p align="center">
   <img src="docs/screenshots/ui-v0.4-menubar.png" width="280" alt="菜单栏下拉：待更新数、上次检查、立即检查">
-  <img src="docs/screenshots/ui-v0.4-settings.png" width="420" alt="设置：定时检查、系统通知、备份占用与清理">
+  <img src="docs/screenshots/ui-v0.4-settings.png" width="420" alt="设置：菜单栏图标、定时检查、系统通知、备份占用与清理">
 </p>
 
-左：菜单栏下拉（合成状态，条目与真机一致；真机是系统原生菜单外观）。右：设置窗口——定时检查时刻、通知开关、备份占用与清理，改完即生效，重启后仍在。系统通知横幅依赖权限，走不了 `--snapshot`，真机关主窗口后点「立即检查」即可看到。
+左：菜单栏下拉（合成状态，条目与真机一致；真机是系统原生菜单外观）。右：设置窗口——菜单栏图标开关、定时检查时刻、通知开关、备份占用与清理，改完即生效，重启后仍在。系统通知横幅依赖权限，走不了 `--snapshot`，真机关主窗口后点「立即检查」即可看到。
 
 清理备份是**就地确认**，不是弹窗：
 
@@ -94,6 +94,16 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 </p>
 
 两个理由：一是这个动作不值得为一次确认引入模态；二是本项目踩过「**模态面板挂着时 `NSApp.terminate` 是空操作**」这个坑（`SelfQuit` 里有四组对照实验），用户开着确认框去退出应用却退不掉，比多点一下糟得多。顺带的好处是就地确认能被 `--snapshot --mode settings-confirm` 复现，弹窗不行。
+
+菜单栏图标本身也是可关的（默认开，见上一节）。关掉后**受影响的只有图标**，但「图标 + 通知」两个出口都关掉时，后台就真成了闷头查——设置页把这件事当场说出来：
+
+<p align="center">
+  <img src="docs/screenshots/ui-v0.7-menubar-icon-off.png" width="420" alt="设置：菜单栏图标与通知都关掉时，多一行提示「后台照跑但不会有任何提示」">
+</p>
+
+```bash
+$AU --snapshot /tmp/icon-off.png --mode settings-icon-off
+```
 
 <p align="center">
   <img src="docs/screenshots/ui-v0.5-search.png" width="420" alt="搜索：筛选“ch”实时过滤列表与命中数">
@@ -231,7 +241,7 @@ $AU --recover                # 清理上一次被中断的安装残留
 | `--recover` | 清理上一次被中断的安装残留 |
 | `--self-check` | 检查本工具自己的 GitHub Release |
 | `--self-install` | 对本工具执行下载 → 验签 → 自替换 |
-| `--snapshot <路径> [--mode …]` | 导出界面截图（`main / ledger / confirm / batch / running / cancelled / menubar / settings / settings-confirm`） |
+| `--snapshot <路径> [--mode …]` | 导出界面截图（`main / ledger / confirm / batch / running / cancelled / menubar / settings / settings-confirm / settings-icon-off`） |
 | `--query "<词>"` | 配合 `--snapshot` 使用，把筛选态渲染进截图（仅对 `main` 模式生效） |
 
 `--refresh` 读的是 GUI 写下的检查结果缓存，所以先跑一次 `--check`（或打开窗口）让它有东西可刷。
@@ -249,11 +259,12 @@ NSUnbufferedIO=YES nohup "$AU" --job "IINA" >/tmp/updraft.log 2>&1 &
 关掉主窗口应用仍在运行（⌘Q 才退出），菜单栏图标常驻：
 
 - **图标旁的数字**是待更新数，没有更新时只剩一个环形箭头；
+- **不想要这个图标**就在设置里关掉（默认开）。关的只是这个图标：定时检查照跑、通知照弹、⌘Q 照旧。关掉后的回程是 **Dock 图标 → 主窗口**，或按 **⌘,** 直接开设置——图标与通知两个出口都关掉时，设置页会就地多一行提示，不让「查了跟没查一样」憋着；
 - 下拉里能看到上次检查时间与定时计划，「立即检查」不开窗口就能跑——与主窗口「重新检查」是同一个引擎（`CheckEngine`），结果逐字一致；
 - **每日定时检查**（设置里可开关、可改时刻，默认每天 10:00）：到点在后台跑全量检查；合盖、关机错过的时段，唤醒/启动后补查一次；**当天查过（不管手动还是自动）就不重复**；
 - **系统通知**：后台检查发现可更新应用时弹出，点按打开主窗口。你在主窗口里看到的检查结果不会再弹通知（看着结果还弹是打扰）；通知权限被系统拒掉后安静跳过，状态照旧能从菜单栏看到。
 
-设置从三个入口到达：主窗口右上角齿轮、菜单栏「设置…」、⌘,。持久化在 UserDefaults 固定 suite（`com.local.updraft`），裸跑可执行文件与 `.app` 包读到的是同一份。
+设置从三个入口到达：主窗口右上角齿轮、菜单栏「设置…」、⌘,（关掉菜单栏图标后是前两个 —— 右上角齿轮与 ⌘,）。持久化在 UserDefaults 固定 suite（`com.local.updraft`），裸跑可执行文件与 `.app` 包读到的是同一份。
 
 > [!NOTE]
 > 系统通知依赖 UserNotifications，需要进程有 bundle identifier——`dist/Updraft.app` 没问题；`swift run` 直接裸跑可执行文件时通知整体退化为 no-op（一碰 UNUserNotificationCenter 就会崩，代码里按 bundle 探测跳过了），菜单栏与定时检查不受影响。

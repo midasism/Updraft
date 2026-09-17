@@ -37,12 +37,37 @@ public struct UpdraftApp: App {
     }
 
     private var menuBarBase: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: menuBarInserted) {
             MenuBarExtraRoot(model: model)
         } label: {
             menuLabel
         }
         .menuBarExtraStyle(.menu)
+    }
+
+    /// 菜单栏图标是否真的插进系统菜单栏。
+    ///
+    /// 场景本身始终在，靠 `isInserted` 拔插——这是 SwiftUI 给出的唯一入口：
+    /// `SceneBuilder` 里放不了 `if`（没有 buildEither 的可用性分支），`NSStatusItem`
+    /// 也没暴露给 `MenuBarExtra`。绑定直连设置，设置页一改这里就收/放；
+    /// 图标拔掉后调度器、通知、⌘Q 全都不受影响（它们不挂在状态项上）。
+    ///
+    /// ⚠️ **`guard` 那三行是必须的，别当成冗余判断删掉。** SwiftUI 每次更新场景图都会把
+    /// `isInserted` 的当前值**原样写回**绑定，而 `@Published` 对「写同一个值」照样发
+    /// `objectWillChange`（判定在 `willSet`，写 `didSet` 拦不住），于是
+    /// 「写回 → App 体重算 → 再写回」自我维持成**活锁**：主线程再也回不到 RunLoop。
+    /// 同构最小工程实测：无 guard 时绑定每秒被读写约 7000 次，`sample` 停在
+    /// `AppGraph.updateGraph → scenesDidChange → makeMainMenu` 不动，定时检查与菜单全部停摆
+    /// （进程还活着，`kill -0` 查不出来，只有采样能看见）。
+    /// 加上「值没变就不写」之后计数落到个位数，拔插正常。
+    private var menuBarInserted: Binding<Bool> {
+        Binding(
+            get: { model.settings.menuBarIconVisible },
+            set: { visible in
+                guard model.settings.menuBarIconVisible != visible else { return }
+                model.settings.menuBarIconVisible = visible
+            }
+        )
     }
 
     /// 待更新数量徽标走「图标旁数字」而不是系统的 Scene.badge：后者 macOS 14+ 才有，

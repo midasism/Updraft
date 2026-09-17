@@ -32,6 +32,7 @@ final class AppSettingsTests: XCTestCase {
 
     func testFreshDefaults() {
         let settings = AppSettings(defaults: freshDefaults())
+        XCTAssertTrue(settings.menuBarIconVisible, "默认展示——它同时是「待更新数」和隐藏主窗口后的入口")
         XCTAssertTrue(settings.scheduledCheckEnabled, "默认开启——这个功能的意义就是后台自动盯着")
         XCTAssertEqual(settings.scheduledCheckHour, 10)
         XCTAssertEqual(settings.scheduledCheckMinute, 0)
@@ -41,6 +42,7 @@ final class AppSettingsTests: XCTestCase {
 
     func testWritesPersistAcrossInstances() {
         let first = AppSettings(defaults: freshDefaults())
+        first.menuBarIconVisible = false
         first.scheduledCheckEnabled = false
         first.scheduledCheckHour = 14
         first.scheduledCheckMinute = 30
@@ -48,6 +50,7 @@ final class AppSettingsTests: XCTestCase {
 
         // 「重启后仍生效」：新实例（同一个 suite）要读回同样的值。
         let second = AppSettings(defaults: freshDefaults())
+        XCTAssertFalse(second.menuBarIconVisible)
         XCTAssertFalse(second.scheduledCheckEnabled)
         XCTAssertEqual(second.scheduledCheckHour, 14)
         XCTAssertEqual(second.scheduledCheckMinute, 30)
@@ -79,11 +82,13 @@ final class AppSettingsTests: XCTestCase {
         defaults.set("30", forKey: "check.schedule.minute")
         defaults.set("false", forKey: "check.schedule.enabled")
         defaults.set("true", forKey: "notifications.enabled")
+        defaults.set("false", forKey: "menubar.icon.visible")
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.scheduledCheckHour, 14)
         XCTAssertEqual(settings.scheduledCheckMinute, 30)
         XCTAssertFalse(settings.scheduledCheckEnabled)
         XCTAssertTrue(settings.notificationsEnabled)
+        XCTAssertFalse(settings.menuBarIconVisible)
     }
 
     func testScheduleText() {
@@ -93,6 +98,17 @@ final class AppSettingsTests: XCTestCase {
         settings.scheduledCheckHour = 9
         settings.scheduledCheckMinute = 5
         XCTAssertEqual(settings.scheduleText, "定时检查：每天 09:05")
+    }
+
+    /// 关掉菜单栏图标只动它自己。图标是挂在 `MenuBarExtra` 的状态项上的，调度与通知
+    /// 跟应用生命周期走——这条断言把「关图标不会顺带关掉后台检查」钉住。
+    func testHidingMenuBarIconLeavesScheduleAndNotificationsAlone() {
+        let settings = AppSettings(defaults: freshDefaults())
+        settings.menuBarIconVisible = false
+        XCTAssertTrue(settings.scheduledCheckEnabled)
+        XCTAssertTrue(settings.notificationsEnabled)
+        XCTAssertEqual(settings.schedule, CheckSchedule(isEnabled: true, hour: 10, minute: 0))
+        XCTAssertEqual(settings.scheduleText, "定时检查：每天 10:00")
     }
 
     // MARK: - suite 名不能撞自己的 bundle id
