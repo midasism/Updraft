@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-/// 应用设置：定时检查开关/时刻、系统通知开关。UserDefaults 固定 suite 持久化。
+/// 应用设置：菜单栏图标开关、定时检查开关/时刻、系统通知开关。UserDefaults 固定 suite 持久化。
 ///
 /// 固定 suite（而不是 `standard`）的理由和 StateCache 固定路径相同：这个工具既能以
 /// `.app` 包跑、也能裸跑可执行文件（swift run / 直调二进制），`standard` 在两种形态下
@@ -20,6 +20,7 @@ public final class AppSettings: ObservableObject {
     public nonisolated static let suiteName = SelfUpdateIdentity.settingsSuiteName
 
     private enum Key {
+        static let menuBarIconVisible = "menubar.icon.visible"
         static let scheduledEnabled = "check.schedule.enabled"
         static let scheduledHour = "check.schedule.hour"
         static let scheduledMinute = "check.schedule.minute"
@@ -32,6 +33,13 @@ public final class AppSettings: ObservableObject {
     private static let defaultMinute = 0
 
     private let defaults: UserDefaults
+
+    /// 屏幕顶部菜单栏图标是否常驻。默认开——它同时是「看一眼还剩几个可更新」和
+    /// 「隐藏主窗口后的入口」，不该默认收起来。关掉后**只影响这个图标**：
+    /// 定时检查、通知、⌘Q 语义都不变（调度跟应用生命周期走，不挂在 NSStatusItem 上）。
+    @Published public var menuBarIconVisible: Bool {
+        didSet { defaults.set(menuBarIconVisible, forKey: Key.menuBarIconVisible) }
+    }
 
     @Published public var scheduledCheckEnabled: Bool {
         didSet { defaults.set(scheduledCheckEnabled, forKey: Key.scheduledEnabled) }
@@ -57,6 +65,7 @@ public final class AppSettings: ObservableObject {
         let resolved = Self.resolveStore(injected: defaults)
         self.defaults = resolved
 
+        menuBarIconVisible = Self.boolValue(in: resolved, key: Key.menuBarIconVisible) ?? true
         scheduledCheckEnabled = Self.boolValue(in: resolved, key: Key.scheduledEnabled) ?? true
         scheduledCheckHour = min(max(Self.intValue(in: resolved, key: Key.scheduledHour) ?? Self.defaultHour, 0), 23)
         scheduledCheckMinute = min(max(Self.intValue(in: resolved, key: Key.scheduledMinute) ?? Self.defaultMinute, 0), 59)

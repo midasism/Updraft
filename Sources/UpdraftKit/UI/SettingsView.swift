@@ -13,7 +13,7 @@ struct BackupPanelState: Equatable {
     static let unknown = BackupPanelState(bytes: nil)
 }
 
-/// 设置窗口内容：定时检查开关 + 时刻、通知开关、备份占用与清理。
+/// 设置窗口内容：菜单栏图标开关、定时检查开关 + 时刻、通知开关、备份占用与清理。
 ///
 /// 不用 `Form`：离屏截图的 `NSHostingView` 会把 Form 的标签列裁出画布，
 /// 真窗口里也偏挤。改成和主窗口同一套 VStack，改完即写回 `AppSettings`，没有「保存」按钮。
@@ -55,6 +55,24 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
+            section("菜单栏") {
+                Toggle("显示菜单栏图标", isOn: $settings.menuBarIconVisible)
+                Text("图标旁的数字是待更新数，点开就能「立即检查」。关掉后屏幕顶部不再有它——回程是从 Dock 图标打开主窗口，或按 ⌘, 打开本页。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !settings.menuBarIconVisible && !settings.notificationsEnabled {
+                    // 两个出口都关掉时后台照跑，但用户将看不到任何迹象——这句话是那次
+                    // 「查了跟没查一样」的唯一提示。只在这里组合判断，不改开关本身的行为。
+                    Text("图标与通知都关着：定时检查照常跑，但结果不会有任何提示。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Divider()
+
             section("定时检查") {
                 Toggle("每日定时检查", isOn: $settings.scheduledCheckEnabled)
                 if settings.scheduledCheckEnabled {

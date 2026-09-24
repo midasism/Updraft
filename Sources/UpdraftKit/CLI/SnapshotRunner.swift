@@ -28,6 +28,10 @@ public enum SnapshotRunner {
         /// 确认按钮出现后那一行没有把说明文字挤变形、也没有把按钮裁出画布。
         /// 这是清理动作最后一道人工闸门，值得留一张图。
         case settingsConfirm = "settings-confirm"
+        /// 设置窗口在「菜单栏图标关掉 + 通知关掉」下的样子。**合成状态**：这一态多出一行
+        /// 橙色警示（后台照跑但不会有任何提示），且是这页唯一会随开关组合增减内容的行——
+        /// 它挤不挤、会不会把备份那节推出画布，只有渲染出来才知道。
+        case settingsIconOff = "settings-icon-off"
         /// 主窗口在「Homebrew 账本滞后于磁盘」下的样子。**合成状态**：这个界面状态要求
         /// 机器上某个 cask 恰好被应用自带的更新器升过而 brew 记录没跟上，账本一被修正
         /// 就再也复现不了；合成即确定，重跑必然得到同一张图。
@@ -102,7 +106,7 @@ public enum SnapshotRunner {
                 FileHandle.standardError.write(Data("没有找到可自动升级的条目，退回主窗口截图\n".utf8))
                 root = AnyView(ContentView(store: store))
             }
-        case .menubar, .settings, .settingsConfirm, .ledger:
+        case .menubar, .settings, .settingsConfirm, .settingsIconOff, .ledger:
             // 上面 syntheticRoot / ledger 分支已接住，不会走到这里。
             root = AnyView(EmptyView())
         }
@@ -114,9 +118,11 @@ public enum SnapshotRunner {
         switch mode {
         case .main, .ledger: NSSize(width: 880, height: 660)
         case .menubar: NSSize(width: 280, height: 220)
-        // 高度按设置页实际内容量给：三节（定时检查 / 通知 / 备份）。截短了会把
-        // 备份那一节裁掉一半，而截图的意义就是"看得见"。
-        case .settings, .settingsConfirm: NSSize(width: 484, height: 460)
+        // 高度按设置页实际内容量给：四节（菜单栏 / 定时检查 / 通知 / 备份）。截短了会把
+        // 备份那一节裁掉一半，而截图的意义就是"看得见"。`settings-icon-off` 比常规多一行
+        // 橙色警示，所以再高一点。
+        case .settings, .settingsConfirm: NSSize(width: 484, height: 580)
+        case .settingsIconOff: NSSize(width: 484, height: 625)
         default: NSSize(width: 600, height: 540)
         }
     }
@@ -188,13 +194,16 @@ public enum SnapshotRunner {
                     .frame(width: 280, alignment: .top)
                     .background(Color(nsColor: .windowBackgroundColor))
             )
-        case .settings, .settingsConfirm:
+        case .settings, .settingsConfirm, .settingsIconOff:
             let defaults = UserDefaults(suiteName: "updraft-snapshot-settings")
             let settings = AppSettings(defaults: defaults)
+            // 图标默认开着；`settings-icon-off` 把两个出口都关掉，用来留一张
+            // "后台照跑但毫无提示"那一行的图。
+            settings.menuBarIconVisible = mode != .settingsIconOff
             settings.scheduledCheckEnabled = true
             settings.scheduledCheckHour = 10
             settings.scheduledCheckMinute = 0
-            settings.notificationsEnabled = true
+            settings.notificationsEnabled = mode != .settingsIconOff
             // 数字是钉死的：截图要能重跑并给出同一张图，所以不去量真实的备份目录。
             return AnyView(
                 SettingsView(
@@ -212,7 +221,7 @@ public enum SnapshotRunner {
     /// 造一个升级任务，把面板推到确认态。
     private static func prepareJob(store: UpdateStore, mode: Mode, flag: Flag) {
         switch mode {
-        case .main, .running, .cancelled, .menubar, .settings, .settingsConfirm, .ledger:
+        case .main, .running, .cancelled, .menubar, .settings, .settingsConfirm, .settingsIconOff, .ledger:
             break
         case .confirm:
             if let update = store.updates(in: .updateAvailable)
@@ -229,7 +238,7 @@ public enum SnapshotRunner {
     /// 造一个完全确定的升级任务，用来渲染"卡住 / 取消"相关的界面。
     private static func syntheticJob(for mode: Mode) -> UpgradeJob? {
         switch mode {
-        case .main, .confirm, .batch, .menubar, .settings, .settingsConfirm, .ledger:
+        case .main, .confirm, .batch, .menubar, .settings, .settingsConfirm, .settingsIconOff, .ledger:
             return nil
 
         case .running:
