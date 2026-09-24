@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// 网络读取缝。生产走 `HTTPClient`，测试注入 stub，探针不直接碰 `URLSession`。
 public protocol HTTPFetching: Sendable {
@@ -71,7 +72,7 @@ public struct HTTPClient: HTTPFetching, Sendable {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout * 2
-        configuration.httpAdditionalHeaders = ["User-Agent": "Updraft/0.3 (macOS)"]
+        configuration.httpAdditionalHeaders = ["User-Agent": SelfUpdateIdentity.userAgent]
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         session = URLSession(configuration: configuration)
     }
@@ -79,6 +80,7 @@ public struct HTTPClient: HTTPFetching, Sendable {
     public func data(from url: URL) async throws -> Data {
         let (data, response) = try await session.data(from: url)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            Log.net.error("HTTP \(http.statusCode) — \(url.absoluteString)")
             throw HTTPError.statusCode(http.statusCode)
         }
         return data

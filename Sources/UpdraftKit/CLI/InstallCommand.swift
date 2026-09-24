@@ -122,9 +122,13 @@ public enum InstallCommand {
                 }
                 print("  $ brew upgrade --cask \(token)")
                 var succeeded = false
-                for await chunk in BrewService.upgradeStream(token: token) {
-                    FileHandle.standardOutput.write(Data(chunk.utf8))
-                    if chunk.contains("✔ 完成") { succeeded = true }
+                for await event in BrewService.upgradeStream(token: token) {
+                    switch event {
+                    case .output(let chunk):
+                        FileHandle.standardOutput.write(Data(chunk.utf8))
+                    case .finished(let exitCode):
+                        succeeded = exitCode == 0
+                    }
                 }
                 if !succeeded { failures += 1 }
 

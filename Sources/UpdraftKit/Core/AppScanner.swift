@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// 扫描阶段读到的原始事实。分类器只依赖这里暴露的字段，不再碰文件系统。
 public struct ScannedApp: Sendable {
@@ -31,6 +32,7 @@ public struct AppScanner: Sendable {
     }
 
     public func scan() -> [ScannedApp] {
+        Log.scan.info("开始扫描应用，搜索路径: \(searchPaths.map(\.lastPathComponent).joined(separator: ", "))")
         var found: [ScannedApp] = []
         var seen = Set<String>()
 
@@ -43,7 +45,9 @@ public struct AppScanner: Sendable {
             }
         }
 
-        return found.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let sorted = found.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        Log.scan.info("扫描完成，发现 \(sorted.count) 个应用")
+        return sorted
     }
 
     /// 只读一个包。增量刷新用它替代整目录扫描。
