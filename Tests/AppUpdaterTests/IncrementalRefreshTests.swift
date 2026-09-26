@@ -4,8 +4,8 @@ import XCTest
 /// 记录"被探测过哪些应用"的线程安全日志。
 ///
 /// 增量策略的核心承诺就是"只查变更过的那个"，所以这组测试必须能精确断言探测范围，
-/// 而不是靠计时或日志推断。
-private final class ProbeLog: @unchecked Sendable {
+/// 而不是靠计时或日志推断。internal：忽略版本的测试同样要断言"谁被（没被）探测过"。
+final class ProbeLog: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [String] = []
 
@@ -25,7 +25,7 @@ private final class ProbeLog: @unchecked Sendable {
 }
 
 /// 只记账、不发网络请求的假探针。
-private struct StubProbe: UpdateProbing {
+struct StubProbe: UpdateProbing {
     let log: ProbeLog
     let answer: @Sendable (AppInfo) -> UpdateResult
 

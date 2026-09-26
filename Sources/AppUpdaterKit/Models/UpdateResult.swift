@@ -50,30 +50,47 @@ public struct AppUpdate: Identifiable, Equatable, Codable, Sendable {
     public var result: UpdateResult
     public var checkedAt: Date
 
+    /// 非 nil 表示这条的最新版本已被用户忽略（值为被忽略的版本号）。
+    ///
+    /// 展示层的投影：真实来源是 `IgnoredVersions` 的记录文件，每次结果进入列表前
+    /// 由 `UpdateStore` 重算，冷启动回放缓存时也会重新套用。所以它可以放心地
+    /// 随快照一起落盘——哪怕与记录短暂不一致，下一次套用就会修正。
+    public var ignoredVersion: String?
+
     public var id: String { app.id }
 
-    public init(app: AppInfo, result: UpdateResult, checkedAt: Date = Date()) {
+    public init(app: AppInfo, result: UpdateResult, checkedAt: Date = Date(), ignoredVersion: String? = nil) {
         self.app = app
         self.result = result
         self.checkedAt = checkedAt
+        self.ignoredVersion = ignoredVersion
     }
 
-    /// 列表排序：先按分组，再按名称。
+    /// 列表排序：先按分组的展示顺序，再按名称。
     ///
     /// 全量检查与增量刷新共用同一个比较器——两条路径各写一份的话，
     /// 一次局部刷新就会让列表顺序莫名其妙地变一下。
     public static func listOrder(_ left: AppUpdate, _ right: AppUpdate) -> Bool {
-        if left.group != right.group { return left.group.rawValue < right.group.rawValue }
+        if left.group != right.group {
+            let leftRank = UpdateGroup.displayOrder.firstIndex(of: left.group) ?? .max
+            let rightRank = UpdateGroup.displayOrder.firstIndex(of: right.group) ?? .max
+            return leftRank < rightRank
+        }
         return left.app.name.localizedStandardCompare(right.app.name) == .orderedAscending
     }
 
     /// 检查结果换了，应用本身没变（只是又探了一次）。
+    ///
+    /// `ignoredVersion` 不沿用：重新探测意味着结果要重新过一遍忽略判定，
+    /// 旧的抑制状态对新结果没有意义。
     public func replacing(result: UpdateResult, at date: Date = Date()) -> AppUpdate {
         AppUpdate(app: app, result: result, checkedAt: date)
     }
 
     /// 列表分组。
     public var group: UpdateGroup {
+        // 被抑制的条目本质仍是「有更新但用户不要」，从「可更新」里摘出来单独成组。
+        if ignoredVersion != nil, case .updateAvailable = result { return .ignored }
         switch result {
         case .updateAvailable: return .updateAvailable
         case .upToDate: return .upToDate
@@ -131,9 +148,17 @@ public struct AppUpdate: Identifiable, Equatable, Codable, Sendable {
         switch result {
         case .updateAvailable(let release):
             let current = app.currentVersion ?? "?"
-            parts.append("\(current) → \(release.version)")
-            if let size = release.size, size > 0 {
-                parts.append(Self.formatBytes(size))
+            if let ignored = ignoredVersion {
+                // 正常情况下 ignored == release.version（出现更高版本时记录已被清除）。
+                parts.append("已忽略 \(ignored)")
+                if release.version != ignored {
+                    parts.append("最新 \(release.version)")
+                }
+            } else {
+                parts.append("\(current) → \(release.version)")
+                if let size = release.size, size > 0 {
+                    parts.append(Self.formatBytes(size))
+                }
             }
         case .upToDate:
             parts.append("已是最新 \(app.currentVersion ?? "")")
@@ -158,6 +183,8 @@ public enum UpdateGroup: Int, CaseIterable, Codable, Sendable, Identifiable {
     case updateAvailable
     case upToDate
     case unsupported
+    /// rawValue 追加在末尾：更动既有 case 的编号会让旧持久化数据解码错乱。
+    case ignored
 
     public var id: Int { rawValue }
 
@@ -166,6 +193,13 @@ public enum UpdateGroup: Int, CaseIterable, Codable, Sendable, Identifiable {
         case .updateAvailable: return "可更新"
         case .upToDate: return "已是最新"
         case .unsupported: return "无法自动检测"
+        case .ignored: return "已忽略"
         }
     }
+
+    /// 列表分组的展示顺序。与 `rawValue` 解耦——编号要为解码稳定性保持追加，
+    /// 排版顺序则按用户关注度排：要处理的在前，纯记录性的垫底。
+    public static let displayOrder: [UpdateGroup] = [
+        .updateAvailable, .ignored, .upToDate, .unsupported
+    ]
 }

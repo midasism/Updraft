@@ -15,6 +15,13 @@ public struct ContentView: View {
                 recoveryBanner(notice)
                 Divider()
             }
+            if let status = store.selfUpdateStatus {
+                selfUpdateOutcomeBanner(status)
+                Divider()
+            } else if case .available(let release) = store.selfUpdate {
+                selfUpdateAvailableBanner(release)
+                Divider()
+            }
             statsRow
             Divider()
             content
@@ -22,6 +29,9 @@ public struct ContentView: View {
         .frame(minWidth: 760, minHeight: 520)
         .sheet(item: $store.job) { _ in
             UpgradeSheet(store: store)
+        }
+        .sheet(item: $store.selfSheet) { _ in
+            SelfUpdateSheet(store: store)
         }
     }
 
@@ -112,9 +122,98 @@ public struct ContentView: View {
         .background(Theme.Colors.attentionWash)
     }
 
+    // MARK: - 本应用自身的更新
+
+    /// 本应用有新版本。单开一条横幅而不是塞进列表：它的更新方式与列表里那些不同源，
+    /// 目标就是正在运行的自己——要先退出才能换包。
+    private func selfUpdateAvailableBanner(_ release: SelfUpdateRelease) -> some View {
+        let current = SelfIdentity.currentVersion ?? "?"
+        var detail = "AppUpdater \(current) → \(release.version)"
+        if let size = release.size, size > 0 {
+            detail += " · \(AppUpdate.formatBytes(size))"
+        }
+        detail += " · 可在应用内直接更新"
+
+        return banner(
+            icon: "arrow.down.circle.fill",
+            tint: Color.accentColor,
+            wash: Color.accentColor.opacity(0.08),
+            title: "AppUpdater 有新版本",
+            message: detail,
+            actions: AnyView(
+                HStack(spacing: Theme.Spacing.xs) {
+                    Button("发布说明") { store.openReleasePage() }
+                        .controlSize(.small)
+                    Button("更新") { store.requestSelfUpdate() }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                }
+            )
+        )
+    }
+
+    /// 上一次自更新的交接结果。成功与失败都要说，因为换包发生在应用退出之后——
+    /// 用户没有别的渠道知道到底成了没有。
+    private func selfUpdateOutcomeBanner(_ status: SelfUpdateStatus) -> some View {
+        let succeeded = status.outcome == .succeeded
+        var message = status.message
+        if let backup = status.backupPath {
+            message += " · 旧版本备份在 \(backup.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))"
+        }
+
+        return banner(
+            icon: succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+            tint: succeeded ? Theme.Colors.success : Theme.Colors.attention,
+            wash: succeeded ? Theme.Colors.success.opacity(0.08) : Theme.Colors.attentionWash,
+            title: succeeded ? "AppUpdater 已更新" : "上一次自更新没有完成",
+            message: message,
+            actions: AnyView(
+                HStack(spacing: Theme.Spacing.xs) {
+                    if !succeeded {
+                        Button("打开发布页面") { store.openReleasePage() }
+                            .controlSize(.small)
+                    }
+                    Button("知道了") { store.dismissSelfUpdateStatus() }
+                        .controlSize(.small)
+                }
+            )
+        )
+    }
+
+    /// 横幅的公共骨架：图标 + 标题 + 说明 + 右侧动作。
+    private func banner(
+        icon: String,
+        tint: Color,
+        wash: Color,
+        title: String,
+        message: String,
+        actions: AnyView
+    ) -> some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.xs) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(tint)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(message)
+                    .font(Theme.Fonts.note)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: Theme.Spacing.xs)
+            actions
+        }
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.sm)
+        .background(wash)
+    }
+
     private var statsRow: some View {
         HStack(spacing: Theme.Spacing.sm) {
             StatCard(title: "可更新", value: store.updateCount, tint: store.updateCount > 0 ? Theme.Colors.attention : Color.secondary)
+            StatCard(title: "已忽略", value: store.ignoredCount, tint: .secondary)
             StatCard(title: "已是最新", value: store.upToDateCount, tint: Theme.Colors.success)
             StatCard(title: "无法自动检测", value: store.unsupportedCount, tint: .secondary)
         }
@@ -130,7 +229,7 @@ public struct ContentView: View {
             emptyState
         } else {
             List {
-                ForEach(UpdateGroup.allCases) { group in
+                ForEach(UpdateGroup.displayOrder) { group in
                     let items = store.updates(in: group)
                     if !items.isEmpty {
                         Section {
