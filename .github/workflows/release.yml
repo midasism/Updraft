@@ -83,6 +83,9 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
+          # 自更新用的公钥。没配时为空串，build-app.sh 会跳过这一项——
+          # 应用内更新照样能用，只是界面上会如实标"未校验开发者签名"。
+          SELF_UPDATE_ED_PUBLIC_KEY: ${{ secrets.SELF_UPDATE_ED_PUBLIC_KEY }}
         run: scripts/build-app.sh
 
       # 凭据缺失时脚本自己跳过（exit 0），不会打断流水线。
@@ -117,6 +120,26 @@ jobs:
           shasum -a 256 "$ZIP" "$DMG" > SHA256SUMS.txt
           ls -lh
           cat SHA256SUMS.txt
+
+      # 应用内自更新要凭这份签名判断"这个安装包确实出自官方"。
+      # 校验和做不到这件事——它和安装包躺在同一个 Release 里，能改包的人也能改它。
+      - name: 给安装包签名（未配置密钥则跳过）
+        env:
+          ED_KEY: ${{ secrets.SELF_UPDATE_ED_KEY }}
+          ZIP: ${{ steps.meta.outputs.zip }}
+          DMG: ${{ steps.meta.outputs.dmg }}
+        run: |
+          if [ -z "$ED_KEY" ]; then
+            echo "→ 未配置 SELF_UPDATE_ED_KEY，跳过包签名"
+            echo "  应用内自更新仍然可用，但只能依赖校验和与代码签名；"
+            echo "  界面上「签名校验」那一行会显示为「未校验」。"
+            exit 0
+          fi
+
+          # 两个包都签：应用优先用 zip，但 zip 缺失时会退回 dmg，两条路都要有签名可验。
+          swift tools/ReleaseSign.swift sign "$ED_KEY" "artifacts/$ZIP" "artifacts/$ZIP.ed25519"
+          swift tools/ReleaseSign.swift sign "$ED_KEY" "artifacts/$DMG" "artifacts/$DMG.ed25519"
+          ls -l artifacts/*.ed25519
 
       # 每次运行都留一份可直接下载的构建产物（Actions 页面底部 Artifacts）
       - uses: actions/upload-artifact@v4

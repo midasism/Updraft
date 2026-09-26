@@ -19,6 +19,15 @@ public enum SnapshotRunner {
         case running
         /// 收尾页（成功 + 失败 + 已取消混排）。验证"已取消"没有穿成失败的马甲。
         case cancelled
+        /// 主窗口 + 自身更新的顶部横幅。合成状态，验证横幅与统计卡片的共存排布。
+        case selfUpdate = "self-update"
+        /// 自身更新的确认面板。验证"动手前把要发生的事摊开"这一屏。
+        case selfUpdateConfirm = "self-update-confirm"
+
+        /// 这两个态不发网络、不扫应用目录，渲染结果完全由代码决定。
+        var isDeterministic: Bool {
+            self == .selfUpdate || self == .selfUpdateConfirm
+        }
     }
 
     private final class Flag {
@@ -34,12 +43,20 @@ public enum SnapshotRunner {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
-        let canvas = size ?? (mode == .main ? NSSize(width: 880, height: 660) : NSSize(width: 600, height: 540))
+        let canvas = size ?? defaultCanvas(for: mode)
 
         let store = UpdateStore()
         let flag = Flag()
 
-        if let synthetic = syntheticJob(for: mode) {
+        if mode.isDeterministic {
+            // 自身更新相关的那两屏不查网络、不扫本机应用，渲染结果完全确定：
+            // 它们的重点本来就是"有新版本时用户看到什么"，与真实有没有新版本无关。
+            store.injectSelfUpdateForSnapshot(syntheticSelfUpdateResult())
+            if mode == .selfUpdateConfirm {
+                store.selfSheet = .confirming(syntheticSelfPlan())
+            }
+            flag.value = true
+        } else if let synthetic = syntheticJob(for: mode) {
             // 合成状态：不查网络、不扫本机应用，渲染结果完全确定。
             // 这两个截图要能随时重跑并给出同样的结果，而它们的重点本来就是
             // "用户在卡住时看到什么"，与真实有哪些应用可升级无关。
@@ -67,6 +84,10 @@ public enum SnapshotRunner {
         switch mode {
         case .main:
             root = AnyView(ContentView(store: store))
+        case .selfUpdate:
+            root = AnyView(ContentView(store: store))
+        case .selfUpdateConfirm:
+            root = AnyView(SelfUpdateSheet(store: store))
         case .confirm, .batch, .running, .cancelled:
             if flag.jobPrepared {
                 root = AnyView(UpgradeSheet(store: store))
@@ -117,7 +138,7 @@ public enum SnapshotRunner {
     /// 造一个升级任务，把面板推到确认态。
     private static func prepareJob(store: UpdateStore, mode: Mode, flag: Flag) {
         switch mode {
-        case .main, .running, .cancelled:
+        case .main, .running, .cancelled, .selfUpdate, .selfUpdateConfirm:
             break
         case .confirm:
             if let update = store.updates(in: .updateAvailable)
@@ -131,10 +152,51 @@ public enum SnapshotRunner {
         }
     }
 
+    /// 各态的画布尺寸。弹窗与主窗口不是一个尺寸，横幅那条也要留够宽度。
+    private static func defaultCanvas(for mode: Mode) -> NSSize {
+        switch mode {
+        case .main, .selfUpdate: return NSSize(width: 880, height: 660)
+        case .selfUpdateConfirm: return NSSize(width: 600, height: 540)
+        case .confirm, .batch, .running, .cancelled: return NSSize(width: 600, height: 540)
+        }
+    }
+
+    // MARK: - 自身更新的合成数据
+
+    private static func syntheticSelfUpdateResult() -> SelfUpdateResult {
+        .available(SelfUpdateRelease(
+            version: "0.3.0",
+            tag: "v0.3.0",
+            assetName: "Updraft-0.3.0-macOS.zip",
+            downloadURL: URL(string: "https://github.com/midasism/Updraft/releases/download/v0.3.0/Updraft-0.3.0-macOS.zip")!,
+            packageKind: .zip,
+            size: 1_104_320,
+            releaseNotesURL: URL(string: "https://github.com/midasism/Updraft/releases/tag/v0.3.0"),
+            publishedAt: Date(timeIntervalSince1970: 1_789_000_000),
+            checksumURL: URL(string: "https://github.com/midasism/Updraft/releases/download/v0.3.0/SHA256SUMS.txt")
+        ))
+    }
+
+    private static func syntheticSelfPlan() -> SelfUpdater.Plan {
+        guard let release = syntheticSelfUpdateResult().release else {
+            fatalError("合成数据里必须有 release")
+        }
+        return SelfUpdater.Plan(
+            currentVersion: SelfIdentity.currentVersion ?? "0.2.1",
+            release: release,
+            target: SelfIdentity.installedBundle ?? URL(fileURLWithPath: "/Applications/AppUpdater.app"),
+            backupLocation: BackupStore().root
+                .appendingPathComponent(SelfIdentity.bundleIdentifier, isDirectory: true),
+            checksumSource: "SHA256SUMS.txt",
+            signature: "未公布公钥，无法校验",
+            warnings: ["本应用没有公布签名公钥，无法确认安装包是否出自官方"]
+        )
+    }
+
     /// 造一个完全确定的升级任务，用来渲染"卡住 / 取消"相关的界面。
     private static func syntheticJob(for mode: Mode) -> UpgradeJob? {
         switch mode {
-        case .main, .confirm, .batch:
+        case .main, .confirm, .batch, .selfUpdate, .selfUpdateConfirm:
             return nil
 
         case .running:

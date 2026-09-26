@@ -59,6 +59,16 @@ if let name = value(after: "--job") {
     exit(code)
 }
 
+// 检查本应用自己有没有新版本（不写入任何东西）。
+if arguments.contains("--self-check") {
+    runAndWait { await SelfUpdateCommand.check() }
+}
+
+// 把本应用升级到最新版本。换包由独立助手在进程退出后完成。
+if arguments.contains("--self-update") {
+    runAndWait { await SelfUpdateCommand.run() }
+}
+
 // 清理上一次被中断的安装残留。
 if arguments.contains("--recover") {
     exit(InstallCommand.recover())

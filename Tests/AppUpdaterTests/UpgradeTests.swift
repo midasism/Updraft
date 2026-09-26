@@ -597,7 +597,7 @@ final class InterruptedInstallRecoveryTests: XCTestCase {
         XCTAssertEqual(report.rescuedApps, ["KeyCastr"])
         let restored = root.appendingPathComponent("KeyCastr.app")
         XCTAssertTrue(FileManager.default.fileExists(atPath: restored.path), "应用必须被救回来")
-        XCTAssertEqual(Installer.plistValue("CFBundleShortVersionString", in: restored), "0.10.3")
+        XCTAssertEqual(PackageExtractor.plistValue("CFBundleShortVersionString", in: restored), "0.10.3")
         XCTAssertFalse(FileManager.default.fileExists(atPath: artifact("old").path))
         XCTAssertTrue(report.needsAttention.isEmpty)
     }
@@ -615,7 +615,7 @@ final class InterruptedInstallRecoveryTests: XCTestCase {
 
         XCTAssertEqual(report.rescuedApps, ["KeyCastr"])
         let restored = root.appendingPathComponent("KeyCastr.app")
-        XCTAssertEqual(Installer.plistValue("CFBundleShortVersionString", in: restored), "0.10.3")
+        XCTAssertEqual(PackageExtractor.plistValue("CFBundleShortVersionString", in: restored), "0.10.3")
     }
 
     /// 目标缺失又没有可用的旧包：什么都不删，如实上报等人处理。
@@ -693,7 +693,7 @@ final class InstallerHelpersTests: XCTestCase {
         _ = try makeApp("Other", bundleID: "com.example.other")
         let wanted = try makeApp("Target", bundleID: "com.example.target")
 
-        let found = Installer.findAppBundle(in: root, matching: "com.example.target")
+        let found = PackageExtractor.findAppBundle(in: root, matching: "com.example.target")
         XCTAssertEqual(found?.standardizedFileURL.path, wanted.standardizedFileURL.path)
     }
 
@@ -705,21 +705,21 @@ final class InstallerHelpersTests: XCTestCase {
             withDestinationURL: URL(fileURLWithPath: "/Applications")
         )
 
-        let found = Installer.findAppBundle(in: root, matching: "com.example.real")
+        let found = PackageExtractor.findAppBundle(in: root, matching: "com.example.real")
         XCTAssertEqual(found?.lastPathComponent, "Real.app")
         XCTAssertFalse(found?.path.hasPrefix("/Applications/") == true, "绝不能匹配到 /Applications 里的应用")
     }
 
     func testFindAppBundleFallsBackToSoleBundle() throws {
         let only = try makeApp("Solo", bundleID: "com.example.solo")
-        let found = Installer.findAppBundle(in: root, matching: "com.example.does-not-match")
+        let found = PackageExtractor.findAppBundle(in: root, matching: "com.example.does-not-match")
         XCTAssertEqual(found?.standardizedFileURL.path, only.standardizedFileURL.path)
     }
 
     func testFindAppBundleReturnsNilWhenAmbiguous() throws {
         _ = try makeApp("A", bundleID: "com.example.a")
         _ = try makeApp("B", bundleID: "com.example.b")
-        XCTAssertNil(Installer.findAppBundle(in: root, matching: "com.example.unknown"))
+        XCTAssertNil(PackageExtractor.findAppBundle(in: root, matching: "com.example.unknown"))
     }
 
     func testAttachedDeviceParsing() {
@@ -727,8 +727,8 @@ final class InstallerHelpersTests: XCTestCase {
         /dev/disk4          	Apple_partition_scheme
         /dev/disk4s1        	Apple_HFS                      	/Volumes/AlDente
         """
-        XCTAssertEqual(Installer.attachedDevice(in: output), "/dev/disk4")
-        XCTAssertNil(Installer.attachedDevice(in: "hdiutil: attach failed - no mountable file systems"))
+        XCTAssertEqual(PackageExtractor.attachedDevice(in: output), "/dev/disk4")
+        XCTAssertNil(PackageExtractor.attachedDevice(in: "hdiutil: attach failed - no mountable file systems"))
     }
 
     func testPlanReportsSignatureAvailability() {

@@ -50,6 +50,7 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 - ↩️ **失败自动回滚** — 换包用同卷 `rename` 而非“删除 + 拷贝”，旧版本一直在盘上，回滚只是一次改名。
 - 🧹 **中断能自愈** — 强制退出或断电留下的中间态文件，下次启动自动收拾；最坏情况（旧包已挪走、新包未就位）会把旧包搬回去。
 - 🕵️ **拿不准就说拿不准** — feed 读不出来就标“不支持”，版本比对拿不到权威值就标“检查失败”，**绝不猜一个版本号糊弄你**。
+- 🪞 **它自己也算一个待更新项** — 启动时顺带查一次自己的 GitHub Releases，有新版本就在顶部横幅里说清楚；点下去走的是和升级别家应用**同一条链路**：下载 → 校验 → 备份 → 换包 → 重新打开。换不动的时候（只读卷、不是从 `.app` 跑、磁盘不够）如实讲原因，并给出发布页地址让你手动下。
 - 🖥️ **GUI 之外还有 CLI** — 检查、预演、执行、恢复、导出界面截图都有对应命令，方便脚本化与排查。
 
 ## 截图
@@ -61,6 +62,18 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 
 左：升级确认页。动手前把所有要发生的事列清楚——包体积、下载来源、验签方式、备份路径、升级期间应用是否需要先退出。
 右：批量升级清单。只列出自动化能走完的条目，装不了的（需要管理员密码、没有公开安装包）不会混进来。
+
+<p align="center">
+  <img src="docs/screenshots/ui-self-update.png" width="600" alt="顶部横幅：AppUpdater 有新版本">
+</p>
+
+自己也是列表外的一条：有新版本时顶部横幅直说“可在应用内直接更新”，右边的「更新」按钮进确认页，「发布说明」留一条想去 GitHub 看一眼的出路。
+
+<p align="center">
+  <img src="docs/screenshots/ui-self-update-confirm.png" width="480" alt="自更新确认页">
+</p>
+
+自更新的确认页比别家应用多交代两件事：**旧版备份落在哪**、**这次要装到哪个位置**——因为目标就是用户正在用的这个包，位置错了整件事就不成立。
 
 ## 安装
 
@@ -144,7 +157,7 @@ VERSION=0.3.0 scripts/build-dmg.sh     # 出 dist/Updraft-0.3.0-macOS.dmg
 
 ## 使用
 
-启动后自动检查一次，工具栏的「重新检查」可手动触发。检测逻辑与界面共用同一套代码，所以下面这些命令行入口看到的结果和窗口里完全一致：
+启动后自动检查一次，工具栏的「重新检查」可手动触发；同时会顺带查一次**自己**有没有新版本。检测逻辑与界面共用同一套代码，所以下面这些命令行入口看到的结果和窗口里完全一致：
 
 ```bash
 AU="dist/AppUpdater.app/Contents/MacOS/AppUpdater"
@@ -152,6 +165,7 @@ AU="dist/AppUpdater.app/Contents/MacOS/AppUpdater"
 $AU --check                  # 打印完整检测结果
 $AU --plan-all               # 列出所有可自动升级的条目及预检详情（不下载）
 $AU --install-all            # 升级全部可自动完成的条目
+$AU --self-check             # 查自己有没有新版本，并打印预检详情（不下载、不写入）
 $AU --recover                # 清理上一次被中断的安装残留
 ```
 
@@ -165,8 +179,12 @@ $AU --recover                # 清理上一次被中断的安装残留
 | `--plan "<名字>"` / `--plan-all` | 升级预演，不下载、不写入 |
 | `--install "<名字>"` / `--install-all` | 真实执行升级（命令行自己的编排） |
 | `--job "<名字>"` | 真实执行升级，但走界面状态源那条路径（含升级收尾的增量刷新） |
+| `--self-check` | 查自己的新版本并打印预检详情 |
+| `--self-update` | 把当前这个包升级到最新版；正常结局就是**打印到交接那一步然后退出** |
 | `--recover` | 清理上一次被中断的安装残留 |
-| `--snapshot <路径> [--mode main / confirm / batch]` | 导出界面截图 |
+| `--snapshot <路径> [--mode main / confirm / batch / running / cancelled / self-update / self-update-confirm]` | 导出界面截图 |
+
+菜单栏里另有两个入口：**检查更新…**（强制查一次，查完直接弹出面板）和 **打开 Updraft 发布页面**（最后的兜底出口）。
 
 `--refresh` 读的是 GUI 写下的检查结果缓存，所以先跑一次 `--check`（或打开窗口）让它有东西可刷。
 
@@ -177,6 +195,8 @@ NSUnbufferedIO=YES nohup "$AU" --job "IINA" >/tmp/updraft.log 2>&1 &
 ```
 
 （`NSUnbufferedIO=YES` 是必需的：Swift 的 `print` 在 stdout 不是 TTY 时是块缓冲的，进程被强杀会丢掉整个缓冲区，日志一片空白。）
+
+`--self-update` 的退出**不是崩溃**，而是流程本身：换包那两步要等这个进程消失才能做，助手正盯着它。所以别拿 `$?` 判断成败，看状态文件（见下面的「自己给自己升级」）。
 
 ## 工作原理
 
@@ -268,6 +288,35 @@ rename 新包 → /Applications/<名字>.app                  ← 原子
 
 另外三个容易忽略的点：三个路径必须在**同一个卷**上（跨卷 rename 会退化成拷贝，就失去原子性，所以 staging 目录建在目标 App 所在目录而非 `/tmp`）；用 `ditto` 而不是 `cp -R`（要连同符号链接、扩展属性、ACL 一起搬，否则签名校验可能过不了）；解包后按 Bundle ID 精确定位目标 `.app` 时**必须跳过符号链接**（很多 dmg 里放了指向 `/Applications` 的快捷方式）。
 
+### 自己给自己升级：一条链路，一个绕不过去的约束
+
+自己这一条的检测源不是 appcast，而是**本仓库的 GitHub Releases 公开接口**（`/releases/latest`，不需要 token）。选它的理由是省事且不容易坏：**发版就是打 tag**，已经在跑的发布流水线一个字都不用改，也不用为了自更新再维护一份 appcast。未认证接口每小时只让敲 60 次，所以结果缓存 3 小时，失败不落盘——一次网络抖动不该让接下来几小时都看不到新版本。
+
+升级动作复用别家应用那一整套（下载 → 校验和 → Ed25519 签名 → 解包 → 确认身份 → 备份），只在最后一步分道扬镳，因为这里有个物理约束：
+
+```
+应用（还活着）    下载 → 校验 → 解包 → 确认身份 → 备份 → 把新包预置到目标同目录
+                   ↓ 写出脚本并启动它
+                   ↓ 退出
+助手（独立 sh）    等应用真的退出 → 改走旧包 → 新包就位 → 复核 → 清 quarantine → 打开 → 删旧包
+```
+
+**正在运行的进程没法把自己脚下的包换掉。** `.app` 改名之后老进程还活着，但它加载的代码、要读的资源都还指着旧 inode，换完既没法安全继续跑，也没法自己重启。所以最后两次改名必须交给另一个进程。
+
+为什么那是个 `sh` 脚本，而不是“把本应用复制一份再带参数启动”：`sh`、`mv`、`open`、`xattr` 都不在要被替换的那个 bundle 里。换成自家二进制的话，它脚下的包正被换掉，后续任何一次动态加载都可能失败——这是一条没必要走的钢丝。
+
+三条容易忽略的边界：
+
+1. **判定“这个包还在用吗”必须按路径，不能按进程名。** `pgrep -x AppUpdater` 会把“另一份副本在跑”误伤成“应用被重新打开了”——开发机上 `dist/` 和 `/Applications` 两份并存是常态，用户也可能同时留着旧版。脚本用 `lsof -- <这个包的可执行文件>` 与 `pgrep -f -- <这个包>/Contents/MacOS/` 两个独立探针，任一命中就当作在用；探针本身出错也按在用处理。**宁可这次不升级，也不能把运行中实例脚下的包抽走。**
+2. **放弃时要把预置好的新包清掉。** 不然用户会在应用旁边看到一个隐藏的 `.AppUpdater.<token>.new.app`——一份完整的新版本拷贝，而这次更新压根没发生。（这个是真机验证时踩出来的：更新被拒之后，目标旁边静静躺着一份副本。）清理带了道保险：**只在目标完好的时候删**；目标不在，说明已经进了换包中途，那该由启动时的残留恢复接管，多删一个文件可能删掉的是唯一一份完好的包。
+3. **等退出不能只认 `kill -0`。** 它对僵尸进程一样返回成功——那已经死了，只是还没被收尸，只认它就会白等满 60 秒然后放弃整次更新。所以要再看一眼 `ps -o state=`，排除 `Z` 状态。
+
+助手跑在应用已经退出之后，出了问题没人能弹窗，所以它把结果写进 `~/Library/Application Support/AppUpdater/self-update-status.txt`，**下次启动读一次并消费掉**（只读一次，否则每次启动都会重播“上次更新成功了”）。没有这份文件，用户面对的就是“点了更新、应用关了、再打开还是旧版本”，而真相只有助手知道。
+
+格式刻意用 `key=value` 的行文本而不是 JSON：写它的是一个 shell 脚本，在 shell 里拼 JSON 要处理引号与反斜杠转义，漏一个字符就写出坏文件——而这份文件恰恰是换包失败时唯一的证据来源。
+
+换不动的三种情况在点确认**之前**就说清楚，而不是试到一半才失败：不是从 `.app` 里跑（脚本直接跑）、在 `/System` 或 `/Volumes` 下（系统自有、只读卷）、磁盘空间不够（下载包 + 解包副本 + 预置副本要同时存在，按包体积 × 3 + 300 MB 估）。这三种都退回“打开 Release 页面让你自己下”。另外，`/Applications` 之外的位置只要可写也允许——开发时从 `dist/` 直接验证整条链路就靠这一点。
+
 ### 关于 `.delta` 文件
 
 Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但它们指向的是**增量补丁**（魔数 `spk!`，XZ 压缩的二进制差分），必须由 Sparkle 拿着旧包应用，单独下载下来**永远装不上**。
@@ -295,6 +344,19 @@ Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但
 
 最后一行是关键：这种情况下删任何东西都是不可逆的数据损失。
 
+**自己给自己升级也走这一套**，没有第二份恢复逻辑。助手预置新包用的名字是 `.<名字>.<token>.new.app`、被换下来的旧包是 `.<名字>.<token>.old.app`——这个形状正是 `Installer.classifyArtifact` 认得的那种，所以助手万一被强杀，下次启动的残留清理会直接接管，不需要为自更新另写一套。同理，中途被打断留下的那份预置包，在目标完好的时候会被当成冗余清掉。
+
+同一目录（`~/Library/Application Support/AppUpdater/`）下还有两样东西，各有各的用途：
+
+| 文件 | 用途 | 生命周期 |
+|---|---|---|
+| `self-update-status.txt` | 助手的执行结果 | 下次启动读一次即删（只消费一次） |
+| `self-update-<token>.log` | 助手的完整现场记录 | 保留**最近一份**（按修改时间，不是文件名） |
+| `self-update-<token>.sh` | 一次性助手脚本 | 跑完即清；被强杀留下的也会在下次启动时清掉 |
+| `self-update.json` | 版本检查的节流缓存 | 3 小时过期；查失败不落盘 |
+
+脚本看一眼就该删、日志留一份——因为用户报“更新完就不对劲”的时候，那份日志是唯一的现场。
+
 ## 已知限制
 
 - 46 个应用没有公开的更新接口（Adobe 全家桶、Steam / Battle.net / Epic、JetBrains Toolbox、VMware Fusion、Logi Options+ 等），只能标记。
@@ -305,11 +367,21 @@ Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但
 - 少数应用的 appcast 已经失效（ClashX 返回 404、Vox 返回 410），会显示为「检查失败」而不是假装是最新。
 - 增量刷新不重建 brew 索引，因此拿不到索引时会沿用上一次的分类结果（Bundle ID 一致才沿用）。这只会影响“这个应用归谁管”这一类判定，下一次全量检查会自我纠正。
 
+自己更新自己这一侧的边界：
+
+- **v0.2.1 及更早的版本还没有这个能力**，所以那之前的每一次升级都得手动装一次；从带自更新的版本开始，之后就不需要了。
+- 未配 `SELF_UPDATE_ED_KEY` 时，自更新只能依赖校验和与代码签名——**校验和证明不了“出自官方”**（它和包躺在同一个 Release 里），界面上会如实标注“未校验开发者签名”。
+- 从 dmg 里直接运行（挂在 `/Volumes` 下）无法原地替换：那是只读卷，换不了。会引导到发布页。
+- 不是从 `.app` 包里跑（比如 `swift run`）时读不到自身版本号，整条自更新链路降级为“打开发布页”——不拿一个猜的版本号去比对。
+- 同一个路径上还有别的实例在跑时会**拒绝升级**并让你先退出它（这是刻意的：宁可不升，也不能把运行中实例脚下的包抽走）。这里按**包路径**判断，不按进程名——所以从 `dist/` 跑开发版、同时 `/Applications` 里还有一份正式版在跑，不会互相误伤。
+- 应用在 60 秒内没退出就放弃整次更新。它卡住了的时候，硬来比放弃危险。
+- 检测源是 GitHub 的公开接口，未认证每小时 60 次，所以检查结果缓存 3 小时；点「重新检查」会强制绕过缓存。
+
 ## 开发
 
 ```bash
 swift build --disable-sandbox      # 编译
-swift test  --disable-sandbox      # 114 个单元测试
+swift test  --disable-sandbox      # 208 个单元测试
 ```
 
 > [!WARNING]
@@ -326,6 +398,27 @@ CI 在 `macos-latest` 上跑 `swift build`（Debug + Release）与 `swift test`�
 | `scripts/build-dmg.sh` | `dist/Updraft-<版本>-macOS.dmg`——调前者出 `.app`，再套一层拖拽安装窗口 |
 
 发布走 tag：推一个 `v*` 标签，[`.github/workflows/release.yml`](.github/workflows/release.yml) 会自动编译、出 DMG 与 zip、算 SHA-256、建 Release。手动触发同一个工作流则只出 Actions Artifacts，不建 Release，用来单独验证流水线。
+
+### 自更新的包签名（可选，但它是自更新唯一的信任锚）
+
+应用给自己升级时，**校验和不够用**：`SHA256SUMS.txt` 和安装包躺在同一个 Release 里，能改包的人同样能改校验和。它只能证明“下载没坏”，证明不了“出自官方”。Ed25519 签名用一把只存在于 GitHub Secrets 里的私钥，才是真正的锚。
+
+不配这把钥匙也不影响使用，应用会在确认页和报告里如实标注“未校验开发者签名”——**配了就启用，没配就降级**，跟公证那条路一个路子。
+
+| Secret | 内容 | 怎么拿 |
+|---|---|---|
+| `SELF_UPDATE_ED_KEY` | 私钥（base64 的 32 字节） | 跑 `swift tools/ReleaseSign.swift keygen` 生成 |
+| `SELF_UPDATE_ED_PUBLIC_KEY` | 公钥（base64 的 32 字节） | 同上，一次生成、两个一起给出 |
+
+```bash
+swift tools/ReleaseSign.swift keygen                                    # 生成一对密钥
+swift tools/ReleaseSign.swift sign <私钥> <包> <签名输出>                # 手动签（流水线里自动做）
+swift tools/ReleaseSign.swift verify <公钥> <包> <签名文件>              # 复核签名
+```
+
+公钥由 `build-app.sh` 写进 `Info.plist` 的 `SUPublicEDKey`，私钥只在发布时用；流水线会同时给 zip 和 dmg 各出一份 `<包名>.ed25519`。**基元和 Sparkle 完全一致**（32 字节原始私钥 / 32 字节原始公钥 / 64 字节签名，base64 流转），键名也沿用 `SUPublicEDKey`，所以 `SignatureVerifier` 那份给别家应用用的校验逻辑一个字没改就能复用——我们不过是自己更新的“上游”，用的还是同一套规矩。
+
+签名是**三态**而非布尔值：「没公布公钥」和「签名对不上」是完全不同的两件事——前者界面标“未校验”，后者必须中止。
 
 ### 代码签名与公证（可选，但它决定用户的第一印象）
 
@@ -364,18 +457,25 @@ DMG 用 [dmgbuild](https://github.com/dmgbuild/dmgbuild) 而不是 `hdiutil` + A
 
 ```
 Sources/AppUpdaterKit/
-  Models/      AppInfo / AppSource / UpdateResult / ReleaseInfo / UpgradeJob —— 纯数据
+  Models/      AppInfo / AppSource / UpdateResult / ReleaseInfo / UpgradeJob
+               SelfIdentity / SelfUpdateRelease / SelfUpdateStatus —— 纯数据
   Core/        扫描、分类、版本比对、进程执行、缓存、检查编排
                UpdateProbing（探针协议）/ IncrementalChecker（增量刷新与合并）
                SignatureVerifier / PackageDownloader / BackupStore / Installer
+               PackageExtractor（解包，Installer 与自更新共用）
+               SelfUpdateChecker / SelfUpdater / SelfUpdateHandoff
   Probes/      Sparkle 与 Electron 两套探针 + appcast 解析
-  UI/          SwiftUI 界面 + 状态源
-  CLI/         --check / --refresh / --job / --plan / --install / --recover / --snapshot
+  UI/          SwiftUI 界面 + 状态源 + 自更新面板
+  CLI/         --check / --refresh / --job / --plan / --install
+               --self-check / --self-update / --recover / --snapshot
 Sources/AppUpdater/main.swift   可执行入口
-Tests/AppUpdaterTests/          114 个单元测试
+Tests/AppUpdaterTests/          208 个单元测试
+tools/ReleaseSign.swift         自更新包的 Ed25519 签名工具（keygen / sign / verify）
 ```
 
 分层的关键约束：**检测逻辑不认识 UI，UI 不认识网络**。
+
+自更新还多一条：**解包逻辑只有一份**。`Installer`（给别人升）和 `SelfUpdater`（给自己升）都调 `PackageExtractor`——dmg 挂载、符号链接跳过、按 Bundle ID 定位 `.app` 这些坑不值得踩两遍。
 
 ### 新增一种更新来源
 
@@ -392,9 +492,11 @@ Tests/AppUpdaterTests/          114 个单元测试
 - **扫描器测试** — 对临时构造的伪 `.app` 目录树断言分类结果。
 - **探针测试** — 注入 stub HTTP 客户端，覆盖 200 / 404 / 超时 / 畸形 XML 四条路径。
 - **重点回归** — appcast 增量补丁 7 条、签名校验 6 条（真实 Ed25519 密钥对签名通过、篡改一个字节必须失败、换公钥必须失败、缺公钥判“跳过”而非失败）、中断恢复 10 条。
+- **自更新的交接脚本** — 助手脚本是拼字符串生成的，所以一部分断言直接读文本（两次改名的先后、结果先落盘再 `open`、每个变量都必须写成 `${NAME}`）。但**关键几条是真跑脚本**：造一个临时目录里的假 `.app`，配假的 `open` 和一个确定不存在的 PID，跑完整脚本再核对退出码、包内容、状态文件与残留。这里出过两个“只有真跑才看得见”的问题：`$FROM）` 被 macOS 的 sh 当成变量名（配 `set -u` 就是当场退出，用户看到的是“点了更新、应用关了、再打开还是旧版本”），以及放弃更新时预置的新包被留在盘上。另外脚本还要过一道 `sh -n`，语法改坏一定会被发现。
 - **端到端** — 在真机上对真实应用做完整替换。dmg 路径实测 Rectangle `0.86 → 1.100`，zip 路径实测 KeyCastr `0.10.3 → 0.11.1`，升级后 `codesign --verify --deep --strict` 均通过，`/Applications` 无残留、无遗留挂载。
+- **自更新的端到端** — 在临时目录放一份标着 `0.1.0` 的旧包，让它真的去 GitHub 把 `0.2.1` 拉下来换掉自己：换完版本对、`codesign --verify --deep --strict` 过、无隔离属性、无中间态残留、备份是 `0.1.0`、重新打开的实例确实在跑。**全程 `/Applications` 里那份正式版都在运行**——这同时证明了“按路径判断”没有误伤另一份副本。拒绝路径也单独跑过：让同一个包的另一个实例占着它，助手必须拒绝换包、目标一个字节不动、且不留下预置副本。
 
-单元测试证明不了真机替换，**这部分必须真跑**。
+单元测试证明不了真机替换，**这部分必须真跑**。真机跑出来的问题有一半在单元测试的视野之外：脚本语法过了不等于语义对了，顺序对了不等于这一步真的生效。
 
 ## 路线
 

@@ -8,6 +8,10 @@
 #   BUILD_NUMBER      构建号（写进 CFBundleVersion）
 #   CODESIGN_IDENTITY "Developer ID Application: <名字> (TEAMID)"。
 #                     配了就正式签名（公证的前提），没配就退回 ad-hoc。
+#   SELF_UPDATE_ED_PUBLIC_KEY
+#                     自更新包的 Ed25519 公钥（base64）。配了就写进 Info.plist，
+#                     应用才能校验自己下载到的安装包；不配则应用内更新仍然可用，
+#                     只是没法做密码学校验（界面上会如实标注）。
 #
 set -euo pipefail
 
@@ -45,6 +49,15 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 cp "$DIST/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
+# 自更新用的 Ed25519 公钥。键名沿用 Sparkle 的 SUPublicEDKey——算法与语义完全相同，
+# 应用给自己升级时用的还是同一套规矩，没必要另发明一个。
+if [ -n "${SELF_UPDATE_ED_PUBLIC_KEY:-}" ]; then
+  ED_KEY_ENTRY="    <key>SUPublicEDKey</key>
+    <string>$SELF_UPDATE_ED_PUBLIC_KEY</string>"
+else
+  ED_KEY_ENTRY="    <!-- 未配 SELF_UPDATE_ED_PUBLIC_KEY：应用内自更新跳密码学校验 -->"
+fi
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -68,6 +81,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+$ED_KEY_ENTRY
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSAppTransportSecurity</key>
@@ -100,5 +114,11 @@ fi
 
 echo ""
 echo "✔ 已生成 $APP"
+if [ -n "${SELF_UPDATE_ED_PUBLIC_KEY:-}" ]; then
+  echo "  已写入 SUPublicEDKey：应用内自更新会校验安装包签名"
+else
+  echo "  未配 SELF_UPDATE_ED_PUBLIC_KEY：应用内自更新可用，但不做密码学校验"
+  echo "  生成一对密钥：swift tools/ReleaseSign.swift keygen"
+fi
 echo "  试运行：open \"$APP\""
 echo "  自检：  \"$APP/Contents/MacOS/$APP_NAME\" --check"

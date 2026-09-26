@@ -24,10 +24,22 @@ public struct AppScanner: Sendable {
         ]
     }
 
-    private let searchPaths: [URL]
+    /// 扫描时排除的 Bundle ID。
+    ///
+    /// 本应用自己就住在 `/Applications` 里。不排除的话它会把自己列进「无法自动检测」——
+    /// 一个专门用来查更新的工具连自己都查不出来，看着就不对。它走顶部横幅那条独立通路，
+    /// 因为它的更新方式和别人家不一样：目标是正在运行的自己，得先退出再换包。
+    public static let defaultExclusions: Set<String> = [SelfIdentity.bundleIdentifier]
 
-    public init(searchPaths: [URL] = AppScanner.defaultSearchPaths) {
+    private let searchPaths: [URL]
+    private let excludedBundleIDs: Set<String>
+
+    public init(
+        searchPaths: [URL] = AppScanner.defaultSearchPaths,
+        excludedBundleIDs: Set<String> = AppScanner.defaultExclusions
+    ) {
         self.searchPaths = searchPaths
+        self.excludedBundleIDs = excludedBundleIDs
     }
 
     public func scan() -> [ScannedApp] {
@@ -39,7 +51,10 @@ public struct AppScanner: Sendable {
                 let key = appURL.standardizedFileURL.path
                 guard !seen.contains(key) else { continue }
                 seen.insert(key)
-                found.append(inspect(appURL))
+
+                let app = inspect(appURL)
+                guard !isExcluded(app) else { continue }
+                found.append(app)
             }
         }
 
@@ -57,7 +72,13 @@ public struct AppScanner: Sendable {
               isDirectory.boolValue else {
             return nil
         }
-        return inspect(appURL)
+        let app = inspect(appURL)
+        return isExcluded(app) ? nil : app
+    }
+
+    private func isExcluded(_ app: ScannedApp) -> Bool {
+        guard let bundleID = app.bundleID else { return false }
+        return excludedBundleIDs.contains(bundleID)
     }
 
     private func appBundles(in root: URL) -> [URL] {
