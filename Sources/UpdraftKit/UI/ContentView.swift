@@ -241,6 +241,7 @@ public struct ContentView: View {
     private var statsRow: some View {
         HStack(spacing: 12) {
             StatCard(title: "可更新", value: store.updateCount, tint: store.updateCount > 0 ? .orange : .secondary)
+            StatCard(title: "已忽略", value: store.ignoredCount, tint: .secondary)
             StatCard(title: "已是最新", value: store.upToDateCount, tint: .green)
             StatCard(title: "无法自动检测", value: store.unsupportedCount, tint: .secondary)
         }
@@ -258,7 +259,7 @@ public struct ContentView: View {
             noMatchState
         } else {
             List {
-                ForEach(UpdateGroup.allCases) { group in
+                ForEach(UpdateGroup.displayOrder) { group in
                     let items = filtered(in: group)
                     if !items.isEmpty {
                         Section {

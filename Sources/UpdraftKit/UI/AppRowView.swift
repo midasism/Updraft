@@ -60,6 +60,11 @@ struct AppRowView: View {
             if update.result.release?.downloadURL != nil {
                 Button("在浏览器中打开下载页") { store.openDownload(for: update) }
             }
+            if update.ignoredVersion != nil {
+                Button("取消忽略") { store.unignoreVersion(of: update) }
+            } else if let release = update.result.release {
+                Button("忽略这个版本 \(release.version)") { store.ignoreVersion(of: update) }
+            }
         }
     }
 
@@ -85,7 +90,7 @@ struct AppRowView: View {
         switch update.group {
         case .updateAvailable: return Color.orange.opacity(0.16)
         case .upToDate: return Color.green.opacity(0.14)
-        case .unsupported: return Color.secondary.opacity(0.12)
+        case .ignored, .unsupported: return Color.secondary.opacity(0.12)
         }
     }
 
@@ -93,7 +98,7 @@ struct AppRowView: View {
         switch update.group {
         case .updateAvailable: return Color.orange
         case .upToDate: return Color.green
-        case .unsupported: return Color.secondary
+        case .ignored, .unsupported: return Color.secondary
         }
     }
 
@@ -118,7 +123,7 @@ struct AppRowView: View {
                 .foregroundStyle(.orange)
                 .lineLimit(1)
                 .frame(maxWidth: 180, alignment: .trailing)
-        } else if case .updateAvailable = update.result {
+        } else if case .updateAvailable = update.result, update.ignoredVersion == nil {
             switch action {
             case .homebrew, .replaceBundle:
                 Button(action.buttonTitle) {

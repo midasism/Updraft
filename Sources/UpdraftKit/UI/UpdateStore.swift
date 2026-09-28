@@ -63,6 +63,9 @@ public final class UpdateStore: ObservableObject {
     private var didRunRecovery = false
     private var selfCheckTask: Task<SelfUpdateStatus, Never>?
 
+    /// 「忽略这个版本」的记录。用户决策，独立于检查结果缓存持久化。
+    private var ignoredVersions: IgnoredVersions
+
     /// 上一次全量检查用过的 brew 索引。
     ///
     /// 索引只在 brew 安装/卸载 cask 时才会变，而升级应用不会——所以增量刷新直接复用它，
@@ -73,13 +76,19 @@ public final class UpdateStore: ObservableObject {
     public private(set) var lastCheckStartedAt: Date?
 
     public convenience init() {
-        self.init(engine: CheckEngine(), cache: StateCache())
+        self.init(
+            engine: CheckEngine(),
+            cache: StateCache(),
+            ignored: IgnoredVersions(fileURL: IgnoredVersions.defaultFileURL)
+        )
     }
 
     /// 供测试注入假探针与临时缓存文件用。
-    init(engine: CheckEngine, cache: StateCache) {
+    /// `ignored` 缺省为纯内存空记录，测试因此不会读到开发机自己的忽略文件。
+    init(engine: CheckEngine, cache: StateCache, ignored: IgnoredVersions? = nil) {
         self.engine = engine
         self.cache = cache
+        self.ignoredVersions = ignored ?? IgnoredVersions()
 
         if let snapshot = cache.load() {
             updates = SelfUpdateIdentity.excludingSelf(snapshot.updates)
@@ -90,6 +99,9 @@ public final class UpdateStore: ObservableObject {
             // 旧版缓存没有 startedAt，只能退回完成时间；写下一次全量检查后会自动补齐。
             lastCheckStartedAt = snapshot.lastFullCheckStartedAt ?? lastFullCheckAt
             isShowingCachedResult = true
+            // 缓存里的结果不知道记录文件后来发生过什么（比如用户在另一台机器上
+            // 升级了应用、上游发了新版本），回放后立刻重新套用一遍忽略判定。
+            applyIgnoredVersions()
         }
     }
 
@@ -113,6 +125,7 @@ public final class UpdateStore: ObservableObject {
     public var updateCount: Int { updates(in: .updateAvailable).count }
     public var upToDateCount: Int { updates(in: .upToDate).count }
     public var unsupportedCount: Int { updates(in: .unsupported).count }
+    public var ignoredCount: Int { updates(in: .ignored).count }
 
     public var lastCheckedText: String {
         guard let lastChecked else { return "尚未检查" }
@@ -154,6 +167,62 @@ public final class UpdateStore: ObservableObject {
         backupUsage = await Task.detached { store.totalSize() }.value
         isClearingBackups = false
         return report
+    }
+
+    // MARK: - 忽略版本
+
+    /// 「忽略这个版本 1.4.4」。记录落盘，条目当场移入「已忽略」分组。
+    public func ignoreVersion(of update: AppUpdate) {
+        guard let release = update.result.release else { return }
+        ignoredVersions.ignore(app: update.app, version: release.version)
+        ignoredVersions.save()
+        applyIgnoredVersions()
+    }
+
+    /// 「取消忽略」。移除记录并恢复提示；不重新探测——release 信息是刚才才探到的，
+    /// 仍然可信，用户点一下就该立刻看到结果回到「可更新」。
+    public func unignoreVersion(of update: AppUpdate) {
+        ignoredVersions.remove(app: update.app)
+        ignoredVersions.save()
+        applyIgnoredVersions()
+    }
+
+    /// 把忽略记录套用到当前列表上：该抑制的抑制，该清除的清除。
+    ///
+    /// 这是唯一的判定收口——全量检查、增量刷新、冷启动回放缓存、用户增删记录
+    /// 四条路都经过这里，保证界面上看到的抑制状态与记录文件永远是一套真相。
+    private func applyIgnoredVersions() {
+        var recordsChanged = false
+
+        updates = updates.map { update in
+            guard case .updateAvailable(let release) = update.result else { return update }
+
+            switch ignoredVersions.decide(app: update.app, latestVersion: release.version) {
+            case .noRecord:
+                guard update.ignoredVersion != nil else { return update }
+                var cleared = update
+                cleared.ignoredVersion = nil
+                return cleared
+
+            case .suppress(let version):
+                guard update.ignoredVersion != version else { return update }
+                var suppressed = update
+                suppressed.ignoredVersion = version
+                return suppressed
+
+            case .clear:
+                recordsChanged = true
+                ignoredVersions.remove(app: update.app)
+                var cleared = update
+                cleared.ignoredVersion = nil
+                return cleared
+            }
+        }
+
+        if recordsChanged {
+            ignoredVersions.save()
+        }
+        saveCache()
     }
 
     // MARK: - 检查
@@ -230,7 +299,9 @@ public final class UpdateStore: ObservableObject {
         lastCheckStartedAt = startedAt
         statusMessage = ""
         isChecking = false
-        saveCache()
+        // 全量检查是发现「出现了高于被忽略版本的新版本」的主要时机，
+        // 忽略记录在这里到期清除。收尾的 saveCache 由套用逻辑一并完成。
+        applyIgnoredVersions()
     }
 
     // MARK: - 增量刷新
@@ -243,12 +314,21 @@ public final class UpdateStore: ObservableObject {
     ///
     /// 没被点到的条目一律保持原样——它们没有任何理由因为别的应用升级而失去可信度。
     ///
+    /// - Parameters:
+    ///   - ids: 要重查的应用 id（`AppUpdate.id`，即包路径）。
+    ///   - force: 强制探测，被忽略的条目也不例外。升级收尾的自动刷新传 `false`
+    ///     （默认）——上游版本不会因为本机升级了别的应用而改变，被抑制的条目
+    ///     重问一轮是白问；手动对单条「刷新」时应传 `true`，
+    ///     这样用户才能主动发现高于被忽略版本的新版本。
     /// - Returns: `false` 表示当前正忙（全量扫描或另一次刷新在跑），调用方应稍后再试。
     @discardableResult
-    public func refresh(ids: Set<String>) async -> Bool {
+    public func refresh(ids: Set<String>, force: Bool = false) async -> Bool {
         guard !isBusy else { return false }
 
-        let targets = updates.filter { ids.contains($0.id) }
+        var targets = updates.filter { ids.contains($0.id) }
+        if !force {
+            targets.removeAll { $0.ignoredVersion != nil }
+        }
         guard !targets.isEmpty else { return true }
 
         isRefreshing = true
@@ -279,7 +359,7 @@ public final class UpdateStore: ObservableObject {
         )
         statusMessage = ""
         isRefreshing = false
-        saveCache()
+        applyIgnoredVersions()
         return true
     }
 
@@ -312,6 +392,8 @@ public final class UpdateStore: ObservableObject {
     /// 单个应用的升级。只有能自动完成的动作才建任务，其余走 `openDownload`。
     public func requestUpgrade(_ update: AppUpdate) {
         guard job?.isRunning != true else { return }
+        // 被忽略的条目不该再走升级：界面不提供按钮，这里兜一道，防程序化误调。
+        guard update.ignoredVersion == nil else { return }
         guard let item = makeItem(from: update), item.isAutomated else {
             openDownload(for: update)
             return
@@ -346,9 +428,10 @@ public final class UpdateStore: ObservableObject {
     /// 把谓词再抄一遍——两条路都比这行注解糟。
     ///
     /// 返回值全部是 `.updateAvailable`（`installAction` 只在这种情况下才不是 `.manual`），
-    /// 所以 `makeItem` 目前不会丢掉其中任何一条。
+    /// 所以 `makeItem` 目前不会丢掉其中任何一条。被用户忽略的条目不在此列——
+    /// 「全部升级」绝不能悄悄把用户明确拒绝过的版本装上去。
     public nonisolated static func automatedCandidates(in updates: [AppUpdate]) -> [AppUpdate] {
-        updates.filter { $0.installAction.isAutomated }
+        updates.filter { $0.ignoredVersion == nil && $0.installAction.isAutomated }
     }
 
     private func makeItem(from update: AppUpdate) -> UpgradeJob.Item? {
