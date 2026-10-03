@@ -42,7 +42,6 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 ## 目录
 
 - [功能](#功能)
-- [截图](#截图)
 - [安装](#安装)
 - [使用](#使用)
 - [工作原理](#工作原理)
@@ -50,6 +49,7 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 - [已知限制](#已知限制)
 - [开发](#开发)
 - [路线](#路线)
+- [生态](#生态)
 
 ## 功能
 
@@ -70,69 +70,6 @@ Updraft 把散落各处的更新状态收进一个窗口。本机实测：**扫�
 - ⏰ **每日定时检查 + 系统通知** — 到点在后台自动查（错过时段恢复后补一次，当天查过不重复），有更新弹系统通知、点按直达主窗口；权限被拒就安静闭嘴，状态照旧在菜单栏上。
 - 🖥️ **GUI 之外还有 CLI** — 检查、预演、执行、恢复、导出界面截图都有对应命令，方便脚本化与排查。
 
-## 截图
-
-<p align="center">
-  <img src="docs/screenshots/ui-v0.2-confirm.png" width="420" alt="单应用升级确认页">
-  <img src="docs/screenshots/ui-v0.2-batch.png" width="420" alt="批量升级清单">
-</p>
-
-左：升级确认页。动手前把所有要发生的事列清楚——包体积、下载来源、验签方式、备份路径、升级期间应用是否需要先退出。
-右：批量升级清单。只列出自动化能走完的条目，装不了的（需要管理员密码、没有公开安装包）不会混进来。
-
-<p align="center">
-  <img src="docs/screenshots/ui-v0.4-menubar.png" width="280" alt="菜单栏下拉：待更新数、上次检查、立即检查">
-  <img src="docs/screenshots/ui-v0.4-settings.png" width="420" alt="设置：菜单栏图标、定时检查、系统通知、备份占用与清理">
-</p>
-
-左：菜单栏下拉（合成状态，条目与真机一致；真机是系统原生菜单外观）。右：设置窗口——菜单栏图标开关、定时检查时刻、通知开关、备份占用与清理，改完即生效，重启后仍在。系统通知横幅依赖权限，走不了 `--snapshot`，真机关主窗口后点「立即检查」即可看到。
-
-清理备份是**就地确认**，不是弹窗：
-
-<p align="center">
-  <img src="docs/screenshots/ui-v0.4-settings-clear.png" width="420" alt="设置：清理备份的就地确认态，按钮换成“确认清理，无法恢复 / 取消”">
-</p>
-
-两个理由：一是这个动作不值得为一次确认引入模态；二是本项目踩过「**模态面板挂着时 `NSApp.terminate` 是空操作**」这个坑（`SelfQuit` 里有四组对照实验），用户开着确认框去退出应用却退不掉，比多点一下糟得多。顺带的好处是就地确认能被 `--snapshot --mode settings-confirm` 复现，弹窗不行。
-
-菜单栏图标本身也是可关的（默认开，见上一节）。关掉后**受影响的只有图标**，但「图标 + 通知」两个出口都关掉时，后台就真成了闷头查——设置页把这件事当场说出来：
-
-<p align="center">
-  <img src="docs/screenshots/ui-v0.7-menubar-icon-off.png" width="420" alt="设置：菜单栏图标与通知都关掉时，多一行提示「后台照跑但不会有任何提示」">
-</p>
-
-```bash
-$AU --snapshot /tmp/icon-off.png --mode settings-icon-off
-```
-
-<p align="center">
-  <img src="docs/screenshots/ui-v0.5-search.png" width="420" alt="搜索：筛选“ch”实时过滤列表与命中数">
-  <img src="docs/screenshots/ui-v0.5-search-nomatch.png" width="420" alt="搜索：零命中的空态与清除筛选">
-</p>
-
-左：筛选态。输入 `ch` 后列表只剩命中的 9 条，副标题给出「命中 9 / 共 92」；**三张统计卡片仍是 4 / 17 / 71，与不筛选时一字不差**——它们回答的是整机状况，不跟着筛选跳。右：零命中。这个空态与「还没有结果」是两句话，一个是没搜到，一个是没查过。
-
-两张图都能重跑，不是手点出来的：
-
-```bash
-$AU --snapshot /tmp/search.png --mode main --query "ch"
-$AU --snapshot /tmp/nomatch.png --mode main --query "zzz"
-```
-
-<p align="center">
-  <img src="docs/screenshots/ui-v0.6-brew-ledger.png" width="880" alt="Homebrew 账本滞后：按账本写升级起点，并附注磁盘真实版本">
-</p>
-
-上图是 Homebrew 特有的一种「假更新」。`Proxyman` 磁盘上早就是 `6.17.0` 了，但 Homebrew 的账本还停在 `6.12.0`——应用被自带的更新器升过，而 `brew upgrade` 会连账本一起改，所以这次升级显然不是 brew 干的。brew 拿账本比 tap，自然报「过期」。
-
-界面按**账本**写升级起点，再附注磁盘真实版本，`6.17.0 → 6.17.0` 这种看着像版本号算错了的写法不会再出现。`iTerm2` 那一行是账本一致的对照——同样走 Homebrew，显示上没有任何多余的附注。
-
-```bash
-$AU --snapshot /tmp/ledger.png --mode ledger
-```
-
-这张图和菜单栏、设置同属**合成状态**：它要求机器上某个 cask 恰好账本滞后，账本一被修正就再也截不出来，合成才可复现。
-
 ## 安装
 
 ### 一行命令（最省事，不用管 Gatekeeper）
@@ -152,39 +89,26 @@ curl -fsSL https://raw.githubusercontent.com/midasism/Updraft/main/scripts/insta
 
 ### 手动下载（DMG / zip）
 
-从 [Releases](https://github.com/midasism/Updraft/releases/latest) 下载 `Updraft-x.y.z-macOS.dmg`，打开后把图标拖进「应用程序」即可：
-
-<p align="center">
-  <img src="docs/screenshots/dmg-window.png" width="560" alt="DMG 安装窗口：把应用拖进「应用程序」">
-</p>
-
-也可以下载 `Updraft-x.y.z-macOS.zip`，解压后把 `Updraft.app` 拖进 `/Applications`——两者内容一致，DMG 只是多了一层拖拽窗口。
+从 [Releases](https://github.com/midasism/Updraft/releases/latest) 下载 `Updraft-x.y.z-macOS.dmg`，打开后把图标拖进「应用程序」即可；也可下载 `Updraft-x.y.z-macOS.zip` 解压后将 `Updraft.app` 移动至 `/Applications`。
 
 > [!IMPORTANT]
-> 安装包只做了临时签名（ad-hoc），**没有走 Apple 公证**，所以从浏览器下载后首次打开会被 Gatekeeper 拦下，弹「Apple 无法验证…」（只有「完成」和「移到废纸篓」两个按钮）。
+> 安装包采用临时签名（ad-hoc），**未进行 Apple 公证**。从浏览器下载后首次启动会被 Gatekeeper 拦截（提示「Apple 无法验证…」）。
 >
-> **先别急着点「移到废纸篓」——包是好的，也不是签名坏了。** arm64 的可执行文件必须有签名才能加载，ad-hoc 是零成本下唯一的选择；被拦只是因为「没公证」这一件事。
+> macOS 15 (Sequoia)+ 已移除「右键 → 打开」的直接绕过入口，可通过以下任一方式正常打开：
 >
-> **macOS 15 (Sequoia) 起，老教程里的「右键 → 打开」已经失效**（Apple 在 Sequoia 移除了这个绕过入口，macOS 26 Tahoe 上同样无效）。现在只有两条路：
->
-> **① 终端一条命令（最快）**
+> **① 终端清除隔离属性（推荐，最快捷）**
 >
 > ```bash
 > xattr -dr com.apple.quarantine /Applications/Updraft.app
 > ```
 >
-> 之后双击即可打开。（提示权限不足就在前面加 `sudo`。）
+> 之后双击即可直接运行（若提示权限不足可在命令前添加 `sudo`）。
 >
-> **② 走系统设置**
+> **② 系统设置放行**
 >
-> 先双击一次，让它被拦下——这一步不能省，那个按钮只会因为一次失败的启动而出现。然后打开
-> **系统设置 → 隐私与安全性 → 安全性**，找到「已阻止使用"Updraft"…」那一行，点 **仍要打开**，输密码确认。
+> 先双击一次触发拦截提示，然后前往 **系统设置 → 隐私与安全性 → 安全性**，找到「已阻止使用"Updraft"…」项，点击 **仍要打开** 并输入密码确认（该提示在拦截后约 1 小时内有效）。
 >
-> ⚠️ 这个按钮只在被拦后约 1 小时内出现，且没有任何倒计时提示。找不到它就重新双击一次，再回设置页。
->
-> 不建议为了单个应用关掉整个 Gatekeeper（`spctl --master-disable`）——那是拿全机器的安全换一个应用的方便。
->
-> 顺手核对一下校验和更稳。把包和 `SHA256SUMS.txt` 下到同一个文件夹后：
+> **核对校验和**：将安装包与 `SHA256SUMS.txt` 存放于同一目录，执行：
 >
 > ```bash
 > shasum -a 256 -c SHA256SUMS.txt
@@ -323,7 +247,7 @@ NSUnbufferedIO=YES nohup "$AU" --job "IINA" >/tmp/updraft.log 2>&1 &
 - 缓存里 `savedAt`（写入时间）和 `lastFullCheckAt`（上次全量时间）分开记：增量刷新只推前者，界面上“上次检查”仍取后者，免得对着没查过的应用撒谎。
 - 某个包被删了或挪走了就如实标成“检查失败”，**不静默丢掉那一行**。
 
-全量与增量共用 `CheckEngine`，没有第二套探测逻辑；区别只是入参规模。`CheckEngine` 只依赖 `UpdateProbing` 协议，因此测试里可以用“只记账不发请求”的假探针精确断言探测范围——有人把收尾改回整机重扫，测试会立刻发现。
+全量与增量共用 `CheckEngine`，区别仅为入参规模。`CheckEngine` 仅依赖 `UpdateProbing` 协议，测试可通过 Stub 探针精确断言探测范围，防止意外退化为全量扫描。
 
 ### 一键升级的执行流程
 
@@ -392,28 +316,18 @@ rename 新包 → /Applications/<名字>.app                  ← 原子
 
 另外三个容易忽略的点：三个路径必须在**同一个卷**上（跨卷 rename 会退化成拷贝，就失去原子性，所以 staging 目录建在目标 App 所在目录而非 `/tmp`）；用 `ditto` 而不是 `cp -R`（要连同符号链接、扩展属性、ACL 一起搬，否则签名校验可能过不了）；解包后按 Bundle ID 精确定位目标 `.app` 时**必须跳过符号链接**（很多 dmg 里放了指向 `/Applications` 的快捷方式）。
 
-### 关于 `.delta` 文件
+### 增量补丁（.delta）处理
 
-Sparkle 的 appcast 里，`<sparkle:deltas>` 下挂的也是 `<enclosure>`，但它们指向的是**增量补丁**（魔数 `spk!`，XZ 压缩的二进制差分），必须由 Sparkle 拿着旧包应用，单独下载下来**永远装不上**。
-
-这是 v0.1 真实踩过的坑：解析器没有感知嵌套，`<enclosure>` 按“后写覆盖先写”处理，于是把补丁的地址和体积当成了正式包——界面上显示 2.3 MB，点下载拿到的东西根本装不上。
-
-修正后规则有两条，缺一不可：
-
-1. 记录 `deltas` 的嵌套深度，其中的 `<enclosure>` 只计数、绝不写入下载字段；
-2. 正式包的字段**先到先得**（`if current.downloadURL == nil`），否则同一 item 内的其他 `<enclosure>` 会覆盖它。
-
-只做第 1 条不够——有些 feed 在正式包之后还有别的同类标签；只做第 2 条也不够——`deltas` 排在正式包前面时就挡不住。这条边界有 7 个回归测试守着。补丁数量仍保留在 `AppcastItem.deltaCount` 里，为将来支持增量升级留了接口。
+Sparkle 的 appcast 中有时会在 `<sparkle:deltas>` 下提供二进制增量差分补丁（`spk!` 格式），该格式需依赖 Sparkle 原生机制且无法直接独立替换应用。Updraft 目前始终下载完整安装包（dmg / zip），解析订阅源时会自动识别并跳过嵌套补丁条目；补丁计数保留在 `AppcastItem.deltaCount` 中，为后续版本支持增量更新预留接口。
 
 ## 备份与恢复
 
 旧版本备份到 `~/Library/Application Support/Updraft/Backups/<Bundle ID>/<时间戳>-<版本>/`，每个应用只保留最近 1 份（IINA 一个包就 104 MB，无限留存会变成磁盘黑洞）。
 
-即便如此，一个机器上备份攒到 GB 级很常见（本机实测 1.7 GB / 10 个应用）。所以设置页把它量给你看，并给了一个清空入口：
+为避免磁盘占用过度膨胀，设置页提供备份空间统计与就地清空功能：
 
-- **量占用**离开主线程做。`BackupStore.totalSize()` 是同步的整树遍历，几万个文件放在主线程上会把界面钉住，所以它没有"顺手读一下"的同步入口——设置页只读 `UpdateStore.backupUsage`，量它的是 `refreshBackupUsage()`。
-- **清空只删 `Backups/` 的直接子项**，不做任何递归路径推断，保留根目录本身；进门还有一道 `isSafeToClear` 护栏挡掉根目录、家目录与层级过浅的路径。
-- **没有撤销**，所以界面上是两步确认。
+- **异步统计**：遍历计算在后台线程执行，避免占用主线程影响界面响应；
+- **安全清空**：仅删除 `Backups/` 下的直接子目录并保留根目录，内置安全护栏校验根路径，并在界面提供两步确认以防误操作。
 
 安装流程中间被强杀（强制退出、断电）会留下隐藏的中间态文件，下次启动时会自动收拾。恢复逻辑的判据是**目标应用是否完好**：
 
@@ -463,39 +377,11 @@ CI 在 `macos-latest` 上跑 `swift build`（Debug + Release）与 `swift test`�
 
 发布走 tag：推一个 `v*` 标签，[`.github/workflows/release.yml`](.github/workflows/release.yml) 会自动编译、出 DMG 与 zip、算 SHA-256、建 Release。手动触发同一个工作流则只出 Actions Artifacts，不建 Release，用来单独验证流水线。
 
-### 代码签名与公证（可选，但它决定用户的第一印象）
+### 代码签名与公证
 
-**现状**：默认只做 ad-hoc 签名，产物未公证，用户首次打开会被 Gatekeeper 拦下——绕法见上面的「安装」一节。
-
-**想让用户双击即开，只有 Developer ID + 公证一条路**（需要 Apple Developer Program，$99/年）。免费替代方案基本已被堵死：Homebrew 的 `--no-quarantine` 被移除，官方 tap 自 2026 年 9 月起也不再收未签名未公证的 cask。
-
-流水线已经预留好了，**不需要改任何代码**——`build-app.sh` 与 `notarize.sh` 都是「配了凭据就正式签名 + 公证，没配就退回 ad-hoc」。往仓库加六个 secret，整条链路自动切换；不配则行为与现在完全一致：
-
-| Secret | 内容 | 怎么拿 |
-|---|---|---|
-| `APPLE_CERT_P12` | Developer ID Application 证书的 base64 | 从钥匙串导出 `.p12`，再 `base64 -i cert.p12 \| pbcopy` |
-| `APPLE_CERT_PASSWORD` | 导出 `.p12` 时设的密码 | 导的时候自己定 |
-| `APPLE_CODESIGN_IDENTITY` | `Developer ID Application: 名字 (TEAMID)` | `security find-identity -v -p codesigning` |
-| `APPLE_NOTARY_KEY_ID` | App Store Connect API Key 的 Key ID | App Store Connect → 用户和访问 → 集成 → 密钥 |
-| `APPLE_NOTARY_ISSUER_ID` | Issuer ID | 同一个页面顶部 |
-| `APPLE_NOTARY_KEY_P8` | `.p8` 私钥文件的**内容** | 创建密钥时只能下载一次，先存好 |
-| `UPDRAFT_ED25519_PRIVATE_KEY` | 自更新清单的 Ed25519 私钥（32 字节 raw 的 base64） | 与 `SelfUpdateIdentity.publicEDKey` 成对；没配则跳过签名，客户端标「未校验」 |
-
-两处顺序是硬性的，脚本里已经断言：签名必须带 hardened runtime 与时间戳（公证的前置条件），公证必须发生在出包之前（票据钉在 `.app` 上，dmg 和 zip 才都能带上）。`notarize.sh` 还会在提交前先自检签名，把「证书配错了」这类问题从几分钟的排队之后提前到一秒内报出来。
-
-有证书的机器上要跑全流程：
-
-```bash
-CODESIGN_IDENTITY="Developer ID Application: 名字 (TEAMID)" VERSION=0.3.0 scripts/build-app.sh
-NOTARY_KEY_PATH=~/AuthKey.p8 NOTARY_KEY_ID=xxx NOTARY_ISSUER_ID=yyy scripts/notarize.sh
-VERSION=0.3.0 SKIP_APP_BUILD=1 scripts/build-dmg.sh
-```
-
-注意顺序不能颠倒：`staple` 之后 `.app` 就不能再改了，一改票据就失效。
-
-安装窗口的布局写在 `scripts/dmg-settings.py`，背景图由 `tools/DmgBackground.swift` 生成。**这两处共用一套坐标**（窗口左下角为原点）：窗口左上角那个箭头是画在背景图里的，改图标坐标就必须同步改背景图，否则箭头会和图标错位——没有自动校验，只能靠人盯。
-
-DMG 用 [dmgbuild](https://github.com/dmgbuild/dmgbuild) 而不是 `hdiutil` + AppleScript：窗口里图标的摆位存在卷根的 `.DS_Store` 里，用 AppleScript 摆图标等于驱动 Finder 去改这份 `.DS_Store`，而 Finder 自动化需要 GUI 会话与「自动化」权限，CI 上不可靠。dmgbuild 自己直接写 `.DS_Store`，全程不碰 Finder。
+- 默认构建产物采用 ad-hoc 临时签名，未进行 Apple 开发者公证；
+- 若需消除首次运行时的 Gatekeeper 警告以实现双击即开，需配置 Developer ID 证书并完成 Apple 公证。CI 流水线已预留完整支持，配置相应 GitHub Secrets 后自动生效；
+- 完整的凭据配置说明、本地构建公证流程与 DMG 窗口布局细节，请参阅 [打包、代码签名与公证指南](docs/releasing.md)。
 
 ### 目录结构
 
@@ -539,10 +425,8 @@ Tests/UpdraftTests/          244 个单元测试 / 32 个套件（1 条真机用
 - **重点回归** — appcast 增量补丁 7 条、签名校验 6 条（真实 Ed25519 密钥对签名通过、篡改一个字节必须失败、换公钥必须失败、缺公钥判“跳过”而非失败）、中断恢复 10 条。
 - **调度与当日去重** — `CheckPlanner` 全部注入合成时刻（到点/未到/错过/已查过/已触发过/跨天），`UpdateWatcher.tick(now:)` 注入时钟断言「一天只触发一次、跨天再触发」，不真等时间。
 - **设置持久化** — 临时 UserDefaults suite 进出，覆盖默认值、写读回路、越界钳制与文案。
-- **备份** — 备份内容逐字节一致、prune 只留最新、Bundle ID 清洗、时间戳字典序即时间序；清空覆盖释放量一致与「清完再量必须是 0」，护栏（根目录 / 家目录 / 层级过浅）**单独断言谓词而不真调清空**——在 `/` 上真调一次的话，这条测试的通过就依赖于它正在验证的那段代码，护栏哪天回归了它不会红、它会去删用户的磁盘。
+- **备份** — 备份内容逐字节一致、prune 只留最新、Bundle ID 清洗、时间戳字典序即时间序；清空覆盖释放量一致与「清完再量必须是 0」，护栏（根目录 / 家目录 / 层级过浅）**单独断言谓词而不真调清空**。
 - **端到端** — 在真机上对真实应用做完整替换。dmg 路径实测 Rectangle `0.86 → 1.100`，zip 路径实测 KeyCastr `0.10.3 → 0.11.1`，升级后 `codesign --verify --deep --strict` 均通过，`/Applications` 无残留、无遗留挂载。
-
-单元测试证明不了真机替换，**这部分必须真跑**。
 
 ## 路线
 
