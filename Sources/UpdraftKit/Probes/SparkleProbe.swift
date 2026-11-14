@@ -43,6 +43,9 @@ public struct SparkleProbe: Sendable {
             }
             return .upToDate(latest: latestVersion)
         } catch {
+            if HTTPClient.isLocalOrPrivate(url: feedURL) {
+                return .unsupported(reason: "更新源为内网/本地地址且当前不可达")
+            }
             return .failed(reason: Self.describe(error))
         }
     }

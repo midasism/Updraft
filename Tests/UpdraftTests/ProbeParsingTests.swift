@@ -170,4 +170,17 @@ final class ElectronFeedTests: XCTestCase {
             "https://updates.example.com/app/App-1.2.3-arm64.zip"
         )
     }
+
+    func testLocalOrPrivateURLDetection() {
+        XCTAssertTrue(HTTPClient.isLocalOrPrivate(url: URL(string: "http://localhost:8081")!))
+        XCTAssertTrue(HTTPClient.isLocalOrPrivate(url: URL(string: "http://127.0.0.1:7890/update")!))
+        XCTAssertTrue(HTTPClient.isLocalOrPrivate(url: URL(string: "http://192.168.31.224:8989/static/")!))
+        XCTAssertTrue(HTTPClient.isLocalOrPrivate(url: URL(string: "http://10.0.0.5:8000")!))
+        XCTAssertTrue(HTTPClient.isLocalOrPrivate(url: URL(string: "http://172.20.10.2:3000")!))
+        XCTAssertTrue(HTTPClient.isLocalOrPrivate(url: URL(string: "http://my-mac.local/feed")!))
+
+        XCTAssertFalse(HTTPClient.isLocalOrPrivate(url: URL(string: "https://api.github.com/repos/x/y")!))
+        XCTAssertFalse(HTTPClient.isLocalOrPrivate(url: URL(string: "https://updates.example.com/app")!))
+        XCTAssertFalse(HTTPClient.isLocalOrPrivate(url: URL(string: "https://172.32.0.1/app")!))
+    }
 }
