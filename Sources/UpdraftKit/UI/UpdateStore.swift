@@ -462,15 +462,22 @@ public final class UpdateStore: ObservableObject {
         job?.runningLog = log
 
         var succeeded = false
+        var lastEmit = Date.distantPast
         for await event in BrewService.upgradeStream(token: token) {
             switch event {
             case .output(let chunk):
                 log += chunk
-                job?.runningLog = log
+                let now = Date()
+                if now.timeIntervalSince(lastEmit) >= 0.08 {
+                    job?.runningLog = log
+                    lastEmit = now
+                }
             case .finished(let exitCode):
+                job?.runningLog = log
                 succeeded = exitCode == 0
             }
         }
+        job?.runningLog = log
 
         return UpgradeJob.Outcome(
             id: item.id,
