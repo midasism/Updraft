@@ -268,10 +268,15 @@ final class GitHubCatalogTests: XCTestCase {
     func testKnownEntriesArePresent() {
         let expected: [String: String] = [
             "com.lwouis.alt-tab-macos": "lwouis/alt-tab-macos",
+            "com.ccswitch.desktop": "farion1231/cc-switch",
             "io.github.clash-verge-rev.clash-verge-rev": "clash-verge-rev/clash-verge-rev",
+            "io.github.crosspet": "lokicorvus/crosspet",
             "org.jkiss.dbeaver.core.product": "dbeaver/dbeaver",
+            "org.deskflow.deskflow": "deskflow/deskflow",
             "com.follow.clash": "chen08209/FlClash",
             "com.insomnia.app": "Kong/insomnia",
+            "com.nebula.karing": "KaringX/karing",
+            "com.yetone.magpie": "yetone/magpie",
             "dev.zed.Zed": "zed-industries/zed",
         ]
         for (bundleID, repo) in expected {
@@ -280,9 +285,13 @@ final class GitHubCatalogTests: XCTestCase {
     }
 
     func testEveryEntryIsWellFormed() {
-        for bundleID in ["com.lwouis.alt-tab-macos", "io.github.clash-verge-rev.clash-verge-rev",
-                         "org.jkiss.dbeaver.core.product", "com.follow.clash",
-                         "com.insomnia.app", "dev.zed.Zed"] {
+        for bundleID in [
+            "com.lwouis.alt-tab-macos", "com.ccswitch.desktop",
+            "io.github.clash-verge-rev.clash-verge-rev", "io.github.crosspet",
+            "org.jkiss.dbeaver.core.product", "org.deskflow.deskflow",
+            "com.follow.clash", "com.insomnia.app",
+            "com.nebula.karing", "com.yetone.magpie", "dev.zed.Zed"
+        ] {
             guard let repo = GitHubReleaseCatalog.repo(forBundleID: bundleID) else {
                 return XCTFail("白名单缺了 \(bundleID)")
             }

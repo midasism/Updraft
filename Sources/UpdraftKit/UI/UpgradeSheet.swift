@@ -238,7 +238,9 @@ struct UpgradeSheet: View {
                         .id("log-tail")
                 }
                 .onChange(of: job.runningLog) { _ in
-                    proxy.scrollTo("log-tail", anchor: .bottom)
+                    DispatchQueue.main.async {
+                        proxy.scrollTo("log-tail", anchor: .bottom)
+                    }
                 }
             }
             .background(Color(nsColor: .textBackgroundColor))

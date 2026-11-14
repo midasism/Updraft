@@ -128,6 +128,7 @@ public struct ElectronProbe: Sendable {
     }
 
     private func probeGeneric(app: AppInfo, baseURL: URL, channel: String) async -> UpdateResult {
+        let isLocalOrPrivate = HTTPClient.isLocalOrPrivate(url: baseURL)
         let fileName = "\(channel)-mac.yml"
         let url = baseURL.appendingPathComponent(fileName)
 
@@ -163,6 +164,9 @@ public struct ElectronProbe: Sendable {
         } catch {
             if let httpError = error as? HTTPError, case .statusCode(404) = httpError {
                 return .unsupported(reason: "更新源上没有 \(fileName)")
+            }
+            if isLocalOrPrivate {
+                return .unsupported(reason: "更新源为内网/本地地址且当前不可达")
             }
             return .failed(reason: SparkleProbe.describe(error))
         }

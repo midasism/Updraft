@@ -13,14 +13,24 @@ public enum GitHubReleaseCatalog: Sendable {
     private static let repos: [String: String] = [
         // AltTab：内嵌 Sparkle 但 feed 硬编码，GitHub 才是它真正的发布渠道。
         "com.lwouis.alt-tab-macos": "lwouis/alt-tab-macos",
+        // CC Switch。
+        "com.ccswitch.desktop": "farion1231/cc-switch",
         // Clash Verge Rev。
         "io.github.clash-verge-rev.clash-verge-rev": "clash-verge-rev/clash-verge-rev",
+        // CrossPet。
+        "io.github.crosspet": "lokicorvus/crosspet",
         // DBeaver Community。
         "org.jkiss.dbeaver.core.product": "dbeaver/dbeaver",
+        // Deskflow。
+        "org.deskflow.deskflow": "deskflow/deskflow",
         // FlClash。
         "com.follow.clash": "chen08209/FlClash",
         // Insomnia。tag 形如 `core@13.2.0`，归一逻辑见 `GitHubReleaseProbe.version(fromTag:)`。
         "com.insomnia.app": "Kong/insomnia",
+        // Karing。
+        "com.nebula.karing": "KaringX/karing",
+        // magpie。
+        "com.yetone.magpie": "yetone/magpie",
         // Zed。
         "dev.zed.Zed": "zed-industries/zed",
     ]

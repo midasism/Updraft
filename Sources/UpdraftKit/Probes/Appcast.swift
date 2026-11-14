@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// appcast.xml 里的一个版本条目。
 public struct AppcastItem: Equatable, Sendable {
@@ -105,7 +106,10 @@ public enum AppcastParser {
         parser.delegate = delegate
         parser.shouldProcessNamespaces = false
         parser.shouldResolveExternalEntities = false
-        parser.parse()
+        let success = parser.parse()
+        if !success, let error = parser.parserError {
+            Log.probe.warning("XMLParser 解析失败: \(error.localizedDescription)")
+        }
         return Appcast(channelTitle: delegate.channelTitle, items: delegate.items)
     }
 

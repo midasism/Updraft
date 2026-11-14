@@ -260,7 +260,7 @@ public final class UpdateStore: ObservableObject {
             : "正在更新 \(targets.count) 个应用的检查结果…"
 
         let started = Date()
-        let report = await IncrementalChecker(engine: engine).refresh(targets: targets, caskIndex: index) { done, total in
+        let report = await IncrementalChecker(engine: engine).refresh(targets: targets, caskIndex: index) { [weak self] done, total in
             // 只有一个应用时进度条没有意义，保持上面那句"正在更新 X"更好读。
             guard total > 1 else { return }
             Task { @MainActor [weak self] in
@@ -462,15 +462,22 @@ public final class UpdateStore: ObservableObject {
         job?.runningLog = log
 
         var succeeded = false
+        var lastEmit = Date.distantPast
         for await event in BrewService.upgradeStream(token: token) {
             switch event {
             case .output(let chunk):
                 log += chunk
-                job?.runningLog = log
+                let now = Date()
+                if now.timeIntervalSince(lastEmit) >= 0.08 {
+                    job?.runningLog = log
+                    lastEmit = now
+                }
             case .finished(let exitCode):
+                job?.runningLog = log
                 succeeded = exitCode == 0
             }
         }
+        job?.runningLog = log
 
         return UpgradeJob.Outcome(
             id: item.id,

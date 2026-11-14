@@ -39,6 +39,8 @@ public enum PackageKind: String, Codable, Sendable, Equatable {
 /// 缺失时只能降级为「未校验」并在界面上如实说明。
 public struct ReleaseInfo: Equatable, Codable, Sendable {
     public var version: String
+    /// 构建号（如 Sparkle 中的 sparkle:version），在主版本号相同时用于区分构建进度。
+    public var buildVersion: String?
     public var downloadURL: URL?
     public var size: Int64?
     /// Sparkle EdDSA（Ed25519）签名，base64 编码，由 appcast 的 `sparkle:edSignature` 提供。
@@ -55,6 +57,7 @@ public struct ReleaseInfo: Equatable, Codable, Sendable {
 
     public init(
         version: String,
+        buildVersion: String? = nil,
         downloadURL: URL? = nil,
         size: Int64? = nil,
         edSignature: String? = nil,
@@ -62,6 +65,7 @@ public struct ReleaseInfo: Equatable, Codable, Sendable {
         ledgerVersion: String? = nil
     ) {
         self.version = version
+        self.buildVersion = buildVersion
         self.downloadURL = downloadURL
         self.size = size
         self.edSignature = edSignature

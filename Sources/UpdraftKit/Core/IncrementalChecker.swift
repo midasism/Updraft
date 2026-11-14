@@ -61,6 +61,33 @@ public struct IncrementalChecker: Sendable {
         var reused = 0
 
         for target in targets {
+            // 纯命令行 cask（如 ngrok、flutter 没有 .app 包结构，位于 Caskroom 或指定路径）
+            if case .homebrewCask(let token) = target.app.source, target.app.path.pathExtension != "app" {
+                var isDirectory: ObjCBool = false
+                let exists = FileManager.default.fileExists(atPath: target.app.path.path, isDirectory: &isDirectory)
+                    || (caskIndex?.installedTokens.contains(token) ?? false)
+
+                guard exists else {
+                    missing.append(target.replacing(result: .failed(reason: "应用包已不在原路径，可能被移动或删除")))
+                    continue
+                }
+
+                let currentVersion = caskIndex?.binaryOnlyTokens[token]
+                    ?? Self.readCaskroomVersion(at: target.app.path)
+                    ?? target.app.currentVersion
+
+                let app = AppInfo(
+                    name: target.app.name,
+                    bundleID: nil,
+                    path: target.app.path,
+                    currentVersion: currentVersion,
+                    buildVersion: nil,
+                    source: .homebrewCask(token: token)
+                )
+                fresh.append(AppUpdate(app: app, result: target.result))
+                continue
+            }
+
             guard let scanned = scanner.inspect(bundleAt: target.app.path) else {
                 // 包没了就是没了。留在列表里并说明原因，比悄悄删掉一行诚实。
                 missing.append(target.replacing(result: .failed(reason: "应用包已不在原路径，可能被移动或删除")))
@@ -93,6 +120,13 @@ public struct IncrementalChecker: Sendable {
     private func trustedSource(for target: AppUpdate, scanned: ScannedApp) -> AppSource? {
         guard let bundleID = scanned.bundleID, bundleID == target.app.bundleID else { return nil }
         return target.app.source
+    }
+
+    /// 尝试从 Caskroom 目录下提取最新安装的版本号（以排除隐藏目录后的子目录为准）。
+    static func readCaskroomVersion(at url: URL) -> String? {
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: url.path) else { return nil }
+        let versions = entries.filter { !$0.hasPrefix(".") }.sorted()
+        return versions.last
     }
 
     /// 把增量结果并回全量列表。

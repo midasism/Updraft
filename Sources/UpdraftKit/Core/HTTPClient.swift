@@ -77,8 +77,28 @@ public struct HTTPClient: HTTPFetching, Sendable {
         session = URLSession(configuration: configuration)
     }
 
+    /// 判断给定 URL 是否指向本地环回或私有局域网网段。
+    public static func isLocalOrPrivate(url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".local") {
+            return true
+        }
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        if parts.count == 4 {
+            if parts[0] == 10 { return true }
+            if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
+            if parts[0] == 192 && parts[1] == 168 { return true }
+            if parts[0] == 127 { return true }
+        }
+        return false
+    }
+
     public func data(from url: URL) async throws -> Data {
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        if Self.isLocalOrPrivate(url: url) {
+            request.timeoutInterval = 2.0
+        }
+        let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             Log.net.error("HTTP \(http.statusCode) — \(url.absoluteString)")
             throw HTTPError.statusCode(http.statusCode)
@@ -88,6 +108,9 @@ public struct HTTPClient: HTTPFetching, Sendable {
 
     public func response(from url: URL, headers: [String: String]) async throws -> HTTPResponse {
         var request = URLRequest(url: url)
+        if Self.isLocalOrPrivate(url: url) {
+            request.timeoutInterval = 2.0
+        }
         for (name, value) in headers {
             request.setValue(value, forHTTPHeaderField: name)
         }
