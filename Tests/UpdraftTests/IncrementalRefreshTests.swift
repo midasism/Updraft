@@ -662,4 +662,32 @@ final class UpdateStoreRefreshTests: XCTestCase {
         }
         XCTAssertTrue(reason.contains("不在原路径"))
     }
+
+    @MainActor
+    func testCommandLineCaskIsRefreshedWithoutAppBundle() async throws {
+        let caskDir = root.appendingPathComponent("Caskroom/my-cli", isDirectory: true)
+        try FileManager.default.createDirectory(at: caskDir.appendingPathComponent("1.2.0"), withIntermediateDirectories: true)
+
+        let cliApp = AppInfo(
+            name: "my-cli",
+            bundleID: nil,
+            path: caskDir,
+            currentVersion: "1.0.0",
+            buildVersion: nil,
+            source: .homebrewCask(token: "my-cli")
+        )
+        let row = AppUpdate(app: cliApp, result: .updateAvailable(ReleaseInfo(version: "1.2.0")))
+
+        let (store, _) = makeStore(rows: [row], engine: makeEngine())
+        _ = await store.refresh(ids: [cliApp.id])
+
+        XCTAssertEqual(store.updates.count, 1)
+        guard let refreshed = store.updates.first else {
+            return XCTFail("更新列表不应为空")
+        }
+        guard case .upToDate = refreshed.result else {
+            return XCTFail("非 .app 的命令行 cask 刷新后应正常更新状态，不能误判为包丢失: \(refreshed.result)")
+        }
+        XCTAssertEqual(refreshed.app.currentVersion, "1.2.0")
+    }
 }

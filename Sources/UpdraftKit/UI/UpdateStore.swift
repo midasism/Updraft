@@ -260,7 +260,7 @@ public final class UpdateStore: ObservableObject {
             : "正在更新 \(targets.count) 个应用的检查结果…"
 
         let started = Date()
-        let report = await IncrementalChecker(engine: engine).refresh(targets: targets, caskIndex: index) { done, total in
+        let report = await IncrementalChecker(engine: engine).refresh(targets: targets, caskIndex: index) { [weak self] done, total in
             // 只有一个应用时进度条没有意义，保持上面那句"正在更新 X"更好读。
             guard total > 1 else { return }
             Task { @MainActor [weak self] in
