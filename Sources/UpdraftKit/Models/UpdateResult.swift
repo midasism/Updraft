@@ -134,7 +134,14 @@ public struct AppUpdate: Identifiable, Equatable, Codable, Sendable {
         switch result {
         case .updateAvailable(let release):
             let current = release.upgradeFrom(actualVersion: app.currentVersion)
-            parts.append("\(current) → \(release.version)")
+            if current == release.version,
+               let appBuild = app.buildVersion,
+               let releaseBuild = release.buildVersion,
+               appBuild != releaseBuild {
+                parts.append("\(current) (\(appBuild)) → \(release.version) (\(releaseBuild))")
+            } else {
+                parts.append("\(current) → \(release.version)")
+            }
             // 账本滞后时补一句。不补的话，这条会显示成 `6.17.0 → 6.17.0`——
             // 两个数字相同却挂在「可更新」组里，看起来像是版本号算错了。
             if release.hasStaleLedger(actualVersion: app.currentVersion),

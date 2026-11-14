@@ -35,6 +35,7 @@ public struct SparkleProbe: Sendable {
 
                 return .updateAvailable(ReleaseInfo(
                     version: latestVersion,
+                    buildVersion: latest.buildVersion,
                     downloadURL: latest.downloadURL,
                     size: latest.size,
                     edSignature: latest.edSignature,

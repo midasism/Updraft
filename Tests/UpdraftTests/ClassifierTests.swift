@@ -203,4 +203,20 @@ final class AppUpdatePresentationTests: XCTestCase {
         XCTAssertFalse(update.detailText.contains("MB"))
         XCTAssertTrue(update.detailText.contains("2024.1 → 2024.2"))
     }
+
+    func testDetailTextIncludesBuildVersionWhenShortVersionIsIdentical() {
+        let app = AppInfo(
+            name: "Rex Beta",
+            bundleID: "com.superlogical.rex",
+            path: URL(fileURLWithPath: "/Applications/Rex Beta.app"),
+            currentVersion: "0.1.0",
+            buildVersion: "1853",
+            source: .sparkle(feedURL: URL(string: "https://example.com/appcast.xml"))
+        )
+        let update = AppUpdate(
+            app: app,
+            result: .updateAvailable(ReleaseInfo(version: "0.1.0", buildVersion: "1973"))
+        )
+        XCTAssertTrue(update.detailText.contains("0.1.0 (1853) → 0.1.0 (1973)"))
+    }
 }
