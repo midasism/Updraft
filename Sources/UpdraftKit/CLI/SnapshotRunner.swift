@@ -76,6 +76,7 @@ public enum SnapshotRunner {
             // 这两个截图要能随时重跑并给出同样的结果，而它们的重点本来就是
             // "用户在卡住时看到什么"，与真实有哪些应用可升级无关。
             store.job = synthetic
+            store.isJobSheetPresented = true
             flag.jobPrepared = true
             flag.value = true
         } else {
@@ -101,6 +102,7 @@ public enum SnapshotRunner {
             root = AnyView(ContentView(store: store, initialQuery: query))
         case .confirm, .batch, .running, .cancelled:
             if flag.jobPrepared {
+                // 确认态仍由 UpgradeSheet 渲染，不经过主窗口的自动启动入口。
                 root = AnyView(UpgradeSheet(store: store))
             } else {
                 FileHandle.standardError.write(Data("没有找到可自动升级的条目，退回主窗口截图\n".utf8))
