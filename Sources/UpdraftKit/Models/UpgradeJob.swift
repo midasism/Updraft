@@ -95,6 +95,12 @@ public struct UpgradeJob: Identifiable, Sendable {
     public var failedCount: Int { outcomes.filter { !$0.succeeded && !$0.cancelled }.count }
     public var cancelledCount: Int { outcomes.filter(\.cancelled).count }
 
+    /// 主窗口操作条的确定性进度：已完成（成功/失败/跳过）的条目占比。
+    public var progress: Double {
+        let done = items.filter { $0.state.isTerminal }.count
+        return Double(done) / Double(max(items.count, 1))
+    }
+
     /// 收尾取消：把 `index` 起的未完成条目如实标成「已取消」，并为每条补一份结果，
     /// 这样结果页能看见"哪些没做"，而不是静默消失。
     ///

@@ -184,4 +184,56 @@ public enum UpdateGroup: Int, CaseIterable, Codable, Sendable, Identifiable {
         case .unsupported: return "无法自动检测"
         }
     }
+
+    public var symbol: String {
+        switch self {
+        case .updateAvailable: return "arrow.up.circle"
+        case .upToDate: return "checkmark.circle"
+        case .unsupported: return "hand.raised"
+        }
+    }
+}
+
+/// 侧栏导航项：三个分组之外加一个「全部」。
+public enum SidebarNav: String, CaseIterable, Sendable, Identifiable {
+    case all
+    case updateAvailable
+    case upToDate
+    case unsupported
+
+    public var id: String { rawValue }
+
+    public var group: UpdateGroup? {
+        switch self {
+        case .all: return nil
+        case .updateAvailable: return .updateAvailable
+        case .upToDate: return .upToDate
+        case .unsupported: return .unsupported
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .all: return "全部"
+        case .updateAvailable, .upToDate, .unsupported:
+            guard let group else { return "" }
+            return group.title
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .updateAvailable, .upToDate, .unsupported:
+            guard let group else { return "" }
+            return group.symbol
+        }
+    }
+
+    /// 按侧栏顺序移动若干项，首尾夹紧、不环绕——与 macOS 原生侧栏一致。
+    public func advanced(by offset: Int) -> SidebarNav {
+        let all = Self.allCases
+        guard let index = all.firstIndex(of: self) else { return self }
+        return all[min(max(index + offset, 0), all.count - 1)]
+    }
 }

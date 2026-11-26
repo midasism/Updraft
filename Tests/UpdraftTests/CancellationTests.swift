@@ -223,18 +223,19 @@ final class UpgradeCancellationTests: XCTestCase {
         XCTAssertEqual(store.job?.isRunning, true)
     }
 
-    /// 用户报的那个缺口：卡住时面板关不掉、也退不出去。
-    /// 运行中继续挡掉"关闭"（否则结果丢了），但取消必须随时可达。
+    /// 主窗口的取消入口：关闭日志面板只收起视图，不丢正在执行的任务。
+    /// 真正的停止仍由 cancelJob 在条目边界完成。
     @MainActor
-    func testRunningJobCannotBeDismissedButCanBeCancelled() {
+    func testClosingLogPanelKeepsRunningJobAndCanBeCancelled() {
         let store = makeStore()
         store.job = makeRunningJob(["A"])
 
         store.dismissJob()
-        XCTAssertNotNil(store.job, "运行中直接关掉面板会把正在进行的结果丢掉")
+        XCTAssertFalse(store.isJobSheetPresented)
+        XCTAssertNotNil(store.job, "运行中的任务必须保留在主窗口里继续展示进度")
 
         store.cancelJob()
-        XCTAssertEqual(store.job?.cancelRequested, true, "既然关不掉，就必须给用户一个走得出去的口子")
+        XCTAssertEqual(store.job?.cancelRequested, true)
     }
 
     @MainActor
@@ -248,6 +249,22 @@ final class UpgradeCancellationTests: XCTestCase {
         store.dismissJob()
 
         XCTAssertNil(store.job)
+        XCTAssertFalse(store.isJobSheetPresented)
+    }
+
+    /// 操作条进度按「已收尾的条目」算：跑完一半就是 0.5，未开始是 0。
+    func testProgressCountsOnlyTerminalItems() {
+        var job = UpgradeJob(items: [makeItem("A"), makeItem("B"), makeItem("C"), makeItem("D")])
+        XCTAssertEqual(job.progress, 0)
+
+        job.items[0].state = .succeeded
+        job.items[1].state = .failed("下载失败")
+        job.items[2].state = .running
+        XCTAssertEqual(job.progress, 0.5, "成功与失败都算收尾，运行中不算")
+
+        job.items[2].state = .skipped("已取消")
+        job.items[3].state = .succeeded
+        XCTAssertEqual(job.progress, 1)
     }
 
     /// `cancelRemaining` 与 store 的收尾要能接上：把取消之后的账算对。

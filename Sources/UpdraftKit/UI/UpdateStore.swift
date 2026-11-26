@@ -17,8 +17,18 @@ public final class UpdateStore: ObservableObject {
     /// 当前展示的是上一次的缓存结果（冷启动时先渲染，再后台刷新）。
     @Published public private(set) var isShowingCachedResult = false
 
-    /// 当前升级任务。非 nil 时弹出任务面板。
+    /// 当前升级任务。非 nil 时任务在后台推进，行内与底部操作条展示进度。
     @Published public var job: UpgradeJob?
+    /// 是否展示任务面板（确认 / 日志 / 结果）。与 `job` 解耦：任务存在不等于面板开着。
+    @Published public var isJobSheetPresented = false {
+        didSet {
+            // 面板关掉即确认已读：如果任务已结束（或从来就没跑起来），顺手清掉，
+            // 底部操作条回到汇总态。运行中的任务不受影响——面板可以关，任务接着跑。
+            if !isJobSheetPresented, let job, !job.isRunning {
+                self.job = nil
+            }
+        }
+    }
 
     /// 最近一次增量刷新的规模与耗时。
     ///
@@ -310,6 +320,9 @@ public final class UpdateStore: ObservableObject {
     // MARK: - 升级任务的编排
 
     /// 单个应用的升级。只有能自动完成的动作才建任务，其余走 `openDownload`。
+    ///
+    /// 建任务与启动分开：CLI 与截图通道会显式调用 `runJob()`，主窗口则交给
+    /// `startUpgrade` 一键启动。两者共用一个状态机，不能在这里再异步启动一次。
     public func requestUpgrade(_ update: AppUpdate) {
         guard job?.isRunning != true else { return }
         guard let item = makeItem(from: update), item.isAutomated else {
@@ -317,6 +330,20 @@ public final class UpdateStore: ObservableObject {
             return
         }
         job = UpgradeJob(items: [item])
+    }
+
+    /// 主窗口的一键升级：保留预检计划供日志面板查看，但不再用确认弹层阻断列表。
+    public func startUpgrade(_ update: AppUpdate) {
+        requestUpgrade(update)
+        guard job != nil else { return }
+        Task { await runJob() }
+    }
+
+    /// 主窗口的批量升级：任务在后台推进，失败或取消后才主动弹出结果面板。
+    public func startUpgradeAll(visible: [AppUpdate]? = nil) {
+        requestUpgradeAll(visible: visible)
+        guard job != nil else { return }
+        Task { await runJob() }
     }
 
     /// 全部升级：把能自动完成的条目合成一个任务，顺序执行。
@@ -333,6 +360,7 @@ public final class UpdateStore: ObservableObject {
         let items = Self.automatedCandidates(in: visible ?? updates).compactMap { makeItem(from: $0) }
         guard !items.isEmpty else { return }
         job = UpgradeJob(items: items)
+        Task { await runJob() }
     }
 
     /// 从一批条目里挑出本工具能自己走完安装的那些。
@@ -415,6 +443,16 @@ public final class UpdateStore: ObservableObject {
         }
 
         finish(cancellingFrom: cancelledAt)
+
+        // 有未完成的条目才值得弹结果面板打断用户；全绿就让行内的「已升级」自己说话。
+        // 面板关掉任务即清（见 isJobSheetPresented 的 didSet），所以状态展示与
+        // 「留着记录给查看日志」不可兼得——顺利用沉默换简洁，有状况才占注意力。
+        // 全绿：结果已经写进行内状态（已升级/版本号）。任务记录留在 store 里，
+        // 「已升级」标签才不会一闪而过；再次发起升级时自然被新任务覆盖。
+        if let job, job.isFinished, job.failedCount + job.cancelledCount > 0 {
+            isJobSheetPresented = true
+        }
+
         await refreshTouchedApps()
     }
 
@@ -451,10 +489,9 @@ public final class UpdateStore: ObservableObject {
         await refresh(ids: Set(job.items.map(\.app.id)))
     }
 
-    /// 关闭任务面板。结果会保留到下次打开。
+    /// 关闭任务面板。已结束的任务一并清掉，底部操作条回到汇总态。
     public func dismissJob() {
-        guard job?.isRunning != true else { return }
-        job = nil
+        isJobSheetPresented = false
     }
 
     private func runBrew(item: UpgradeJob.Item, token: String) async -> UpgradeJob.Outcome {
